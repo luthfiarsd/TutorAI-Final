@@ -1,6 +1,11 @@
 import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import toast from "react-hot-toast";
+import { authAPI } from "../lib/api";
+import { saveAuth } from "../utils/auth";
 
 export default function Login() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -23,34 +28,20 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Actual API call implementation
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
+      const response = await authAPI.login(formData);
+      const { user, token } = response.data.data;
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Invalid credentials');
-      }
+      saveAuth(user, token);
+      toast.success("Welcome back");
 
-      const data = await response.json();
-      const { user, token } = data.data;
-
-      // Save authentication data
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('token', token);
-
-      // Navigate based on user role
       if (user.role === "admin") {
-        window.location.href = "/admin";
+        navigate("/admin");
       } else {
-        window.location.href = "/home";
+        navigate("/home");
       }
     } catch (error) {
       console.error("Login error:", error);
-      alert(error.message || "Invalid credentials. Please try again.");
+      toast.error(error.response?.data?.message || "Invalid credentials");
     } finally {
       setLoading(false);
     }
@@ -60,30 +51,21 @@ export default function Login() {
     e.preventDefault();
     
     if (!resetEmail) {
-      alert("Please enter your email address");
+      toast.error("Please enter your email address");
       return;
     }
 
     setResetLoading(true);
 
     try {
-      const response = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to send reset email');
-      }
-
-      alert("Password reset link has been sent to your email!");
+      const response = await authAPI.resetPassword({ email: resetEmail });
+      
+      toast.success("Password reset link has been sent to your email!");
       setShowResetModal(false);
       setResetEmail("");
     } catch (error) {
       console.error("Reset password error:", error);
-      alert(error.message || "Failed to send reset email. Please try again.");
+      toast.error(error.response?.data?.message || "Failed to send reset email. Please try again.");
     } finally {
       setResetLoading(false);
     }
@@ -210,7 +192,20 @@ export default function Login() {
           </div>
         </div>
 
-       
+        <div style={styles.testimonial}>
+          <div style={styles.quoteIcon}>"</div>
+          <p style={styles.quote}>
+            TutorAI transformed the way I learn. The AI responses are incredibly
+            accurate and helpful for my studies.
+          </p>
+          <div style={styles.author}>
+            <div style={styles.authorAvatar}>JD</div>
+            <div>
+              <div style={styles.authorName}>Jessica Davis</div>
+              <div style={styles.authorTitle}>Computer Science Student</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Right Panel */}
@@ -223,7 +218,7 @@ export default function Login() {
             </p>
           </div>
 
-          <div style={styles.form}>
+          <form onSubmit={handleSubmit} style={styles.form}>
             <div style={styles.inputGroup}>
               <label style={styles.label}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
@@ -295,7 +290,7 @@ export default function Login() {
             </div>
 
             <button
-              onClick={handleSubmit}
+              type="submit"
               disabled={loading}
               style={{
                 ...styles.submitButton,
@@ -318,7 +313,7 @@ export default function Login() {
                 </>
               )}
             </button>
-          </div>
+          </form>
 
           <div style={styles.divider}>
             <div style={styles.dividerLine}></div>
@@ -328,9 +323,9 @@ export default function Login() {
 
           <div style={styles.footer}>
             <span style={styles.footerText}>Don't have an account?</span>
-            <a href="/register" style={styles.footerLink}>
+            <Link to="/register" style={styles.footerLink}>
               Create account
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -353,6 +348,7 @@ const styles = {
     minHeight: "100vh",
     position: "relative",
     overflow: "hidden",
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   },
   backgroundLayer: {
     position: "fixed",
@@ -531,6 +527,9 @@ const styles = {
     border: "1px solid rgba(255, 255, 255, 0.2)",
   },
   quoteIcon: {
+    fontSize: "64px",
+    color: "rgba(255, 255, 255, 0.2)",
+    lineHeight: "1",
     marginBottom: "16px",
   },
   quote: {

@@ -1,3 +1,4 @@
+//auth.js
 // Get user from localStorage
 export const getUser = () => {
   const userStr = localStorage.getItem("user");

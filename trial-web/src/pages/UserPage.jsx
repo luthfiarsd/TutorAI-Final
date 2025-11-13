@@ -1,4 +1,4 @@
-//UserPage.jsx
+// UserPage.jsx
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -22,12 +22,16 @@ export default function UserPage() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
-  const [conversationMode, setConversationMode] = useState(false); // Speech-to-Speech mode
+  const [conversationMode, setConversationMode] = useState(false);
+  
+  // User typing state untuk avatar
+  const [isUserTyping, setIsUserTyping] = useState(false);
   
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const userDropdownRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   useEffect(() => {
     const userData = getUser();
@@ -46,7 +50,6 @@ export default function UserPage() {
   useEffect(() => {
     initializeSpeechRecognition();
     
-    // Click outside handler for dropdown
     const handleClickOutside = (event) => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(event.target)) {
         setShowUserDropdown(false);
@@ -54,7 +57,12 @@ export default function UserPage() {
     };
     
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
   }, []);
 
   const scrollToBottom = () => {
@@ -73,7 +81,6 @@ export default function UserPage() {
         setMessage(transcript);
         setIsListening(false);
         
-        // Auto-send in conversation mode
         if (conversationMode) {
           handleSendMessage(null, transcript);
         }
@@ -89,7 +96,6 @@ export default function UserPage() {
 
       recognitionRef.current.onend = () => {
         setIsListening(false);
-        // Restart listening in conversation mode if AI is not speaking
         if (conversationMode && !isSpeaking) {
           setTimeout(() => startListening(), 500);
         }
@@ -100,7 +106,6 @@ export default function UserPage() {
   };
 
   const detectLanguage = (text) => {
-    // Simple language detection
     const indonesianPattern = /[a-z]*(nya|kan|lah|kah|an|yang|dengan|untuk|dari|ke|di|pada)\b/i;
     return indonesianPattern.test(text) ? 'id-ID' : 'en-US';
   };
@@ -108,7 +113,6 @@ export default function UserPage() {
   const startListening = () => {
     if (recognitionRef.current && !isListening) {
       try {
-        // Set language based on last message or default to Indonesian
         const lastChat = chats[chats.length - 1];
         const lang = lastChat ? detectLanguage(lastChat.content) : 'id-ID';
         recognitionRef.current.lang = lang;
@@ -142,13 +146,12 @@ export default function UserPage() {
       utterance.onstart = () => {
         setIsSpeaking(true);
         if (conversationMode) {
-          stopListening(); // Stop listening while speaking
+          stopListening();
         }
       };
       
       utterance.onend = () => {
         setIsSpeaking(false);
-        // Resume listening in conversation mode
         if (conversationMode) {
           setTimeout(() => startListening(), 500);
         }
@@ -185,19 +188,41 @@ export default function UserPage() {
     }
   };
 
+  // Handle user typing untuk animasi avatar
+  const handleInputChange = (e) => {
+    setMessage(e.target.value);
+    
+    // Set user is typing
+    setIsUserTyping(true);
+    
+    // Clear previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    // Set new timeout to stop typing indicator
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsUserTyping(false);
+    }, 1000);
+  };
+
   const loadChatHistory = async () => {
     try {
       const response = await chatAPI.getHistory(1, 50);
-      const historyData = response.data.data.chats || [];
+      console.log("Chat history response:", response);
       
-      // Group chats by conversation (simplified grouping)
+      const historyData = response.data?.data?.chats || 
+                         response.data?.chats || 
+                         response.chats || 
+                         [];
+      
       const grouped = historyData.reduce((acc, chat) => {
-        const dateKey = new Date(chat.created_at).toDateString();
+        const dateKey = new Date(chat.created_at || chat.timestamp).toDateString();
         if (!acc[dateKey]) {
           acc[dateKey] = {
-            id: chat.id,
-            title: chat.message.substring(0, 50) + '...',
-            timestamp: new Date(chat.created_at),
+            id: chat.id || chat._id,
+            title: (chat.message || chat.content || '').substring(0, 50) + '...',
+            timestamp: new Date(chat.created_at || chat.timestamp),
             messages: []
           };
         }
@@ -218,6 +243,8 @@ export default function UserPage() {
     if (!textToSend) return;
 
     setMessage("");
+    setIsUserTyping(false); // Stop typing indicator
+    
     const newUserChat = {
       type: "user",
       content: textToSend,
@@ -229,31 +256,75 @@ export default function UserPage() {
     setIsTyping(true);
 
     try {
+      console.log("Sending message:", textToSend);
+      
       const response = await chatAPI.sendMessage(textToSend);
-      const data = response.data.data;
+      console.log("Chat API response:", response);
+      
+      const data = response.data?.data || response.data || response;
+      
+      if (!data) {
+        throw new Error("No response data received");
+      }
 
       setTimeout(() => {
         setIsTyping(false);
         const newAiChat = {
           type: "ai",
-          content: data.reply,
+          content: data.reply || data.message || data.content || "I'm sorry, I couldn't process that request.",
           sources: data.sources || [],
-          timestamp: new Date(data.created_at),
+          timestamp: new Date(data.created_at || new Date()),
         };
+        
         setChats((prev) => [...prev, newAiChat]);
         
-        // Speak response in voice/conversation mode
         if (voiceEnabled || conversationMode) {
-          speak(data.reply);
+          speak(newAiChat.content);
         }
         
-        // Reload history
         loadChatHistory();
       }, 500);
+      
     } catch (error) {
-      console.error("Chat error:", error);
+      console.error("Chat error details:", error);
       setIsTyping(false);
-      toast.error(error.response?.data?.message || "Failed to send message");
+      
+      let errorMessage = "Failed to process chat";
+      
+      if (error.response) {
+        console.error("Response status:", error.response.status);
+        console.error("Response data:", error.response.data);
+        
+        if (error.response.status === 401) {
+          errorMessage = "Session expired. Please login again.";
+          setTimeout(() => {
+            logout();
+            navigate("/login");
+          }, 2000);
+        } else if (error.response.status === 429) {
+          errorMessage = "Too many requests. Please wait a moment.";
+        } else if (error.response.status >= 500) {
+          errorMessage = "Server error. Please try again later.";
+        } else {
+          errorMessage = error.response.data?.message || error.response.data?.error || errorMessage;
+        }
+      } else if (error.request) {
+        console.error("No response received:", error.request);
+        errorMessage = "Network error. Please check your connection.";
+      } else {
+        errorMessage = error.message || errorMessage;
+      }
+      
+      toast.error(errorMessage);
+      
+      const errorChat = {
+        type: "ai",
+        content: "I apologize, but I'm having trouble processing your request right now. Please try again in a moment.",
+        timestamp: new Date(),
+        isError: true
+      };
+      setChats((prev) => [...prev, errorChat]);
+      
     } finally {
       setLoading(false);
       if (!conversationMode) {
@@ -265,30 +336,38 @@ export default function UserPage() {
   const startNewChat = () => {
     setChats([]);
     setCurrentChatId(null);
+    setIsUserTyping(false);
     if (conversationMode) {
       toggleConversationMode();
     }
+    toast.success("New chat started");
   };
 
   const loadChat = async (chatId) => {
-    setCurrentChatId(chatId);
-    // In production, load specific conversation messages
-    const historyItem = chatHistory.find(h => h.id === chatId);
-    if (historyItem && historyItem.messages) {
-      const formattedChats = historyItem.messages.flatMap(msg => [
-        {
-          type: "user",
-          content: msg.message,
-          timestamp: new Date(msg.created_at),
-        },
-        {
-          type: "ai",
-          content: msg.reply,
-          sources: msg.sources || [],
-          timestamp: new Date(msg.created_at),
-        }
-      ]);
-      setChats(formattedChats);
+    try {
+      setCurrentChatId(chatId);
+      const historyItem = chatHistory.find(h => h.id === chatId);
+      
+      if (historyItem && historyItem.messages) {
+        const formattedChats = historyItem.messages.flatMap(msg => [
+          {
+            type: "user",
+            content: msg.message || msg.content,
+            timestamp: new Date(msg.created_at || msg.timestamp),
+          },
+          {
+            type: "ai",
+            content: msg.reply || msg.response || msg.content,
+            sources: msg.sources || [],
+            timestamp: new Date(msg.created_at || msg.timestamp),
+          }
+        ]);
+        setChats(formattedChats);
+        setIsSidebarOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to load chat:", error);
+      toast.error("Failed to load chat history");
     }
   };
 
@@ -319,12 +398,21 @@ export default function UserPage() {
 
   return (
     <div style={styles.container}>
-      {/* Animated Background */}
+      {/* Animated Background with Large Interactive Avatar */}
       <div style={styles.backgroundLayer}>
         <div style={styles.floatingCircle1}></div>
         <div style={styles.floatingCircle2}></div>
         <div style={styles.floatingCircle3}></div>
         <div style={styles.gradientOverlay}></div>
+        
+        {/* Avatar Background yang Besar - BISA DIINTERAKSI & OPACITY TINGGI */}
+        <div style={styles.backgroundAvatarContainer}>
+          <Avatar3D 
+            isSpeaking={isSpeaking || isTyping} 
+            isUserTyping={isUserTyping}
+            background={true} 
+          />
+        </div>
       </div>
 
       {/* Sidebar */}
@@ -469,12 +557,13 @@ export default function UserPage() {
         <div style={styles.chatContainer}>
           {chats.length === 0 ? (
             <div style={styles.emptyState}>
-              <div style={styles.emptyIcon}>
-                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-                  <circle cx="40" cy="40" r="40" fill="rgba(21, 60, 48, 0.05)" />
-                  <path d="M30 35L40 45L50 35M30 45L40 55L50 45"
-                    stroke="#153C30" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+              {/* Avatar kecil di center untuk empty state */}
+              <div style={styles.avatarContainer}>
+                <Avatar3D 
+                  isSpeaking={isSpeaking} 
+                  isUserTyping={isUserTyping}
+                  size={140} 
+                />
               </div>
               <h2 style={styles.emptyTitle}>Welcome to TutorAI</h2>
               <p style={styles.emptyText}>
@@ -487,6 +576,20 @@ export default function UserPage() {
                   <span>Conversation mode active - speak now</span>
                 </div>
               )}
+              
+              {isUserTyping && !conversationMode && (
+                <div style={{
+                  ...styles.conversationBadge,
+                  background: 'rgba(45, 122, 95, 0.1)',
+                  border: '2px solid #2D7A5F',
+                }}>
+                  <div style={{
+                    ...styles.pulseIndicator,
+                    background: '#2D7A5F',
+                  }}></div>
+                  <span style={{ color: '#2D7A5F' }}>Listening to your input...</span>
+                </div>
+              )}
             </div>
           ) : (
             <div style={styles.chatMessages}>
@@ -497,18 +600,22 @@ export default function UserPage() {
                 >
                   {chat.type === "ai" && (
                     <div style={styles.aiAvatar}>
-                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                        <path d="M6 7L10 11L14 7M6 11L10 15L14 11"
-                          stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
+                      {/* Avatar kecil untuk AI messages */}
+                      <Avatar3D 
+                        isSpeaking={isSpeaking && index === chats.length - 1} 
+                        size={36} 
+                      />
                     </div>
                   )}
 
                   <div style={styles.messageGroup}>
-                    <div style={chat.type === "user" ? styles.userMessage : styles.aiMessage}>
+                    <div style={{
+                      ...(chat.type === "user" ? styles.userMessage : styles.aiMessage),
+                      ...(chat.isError ? styles.errorMessage : {})
+                    }}>
                       <div style={styles.messageContent}>{chat.content}</div>
                     </div>
-
+                    
                     {chat.sources && chat.sources.length > 0 && (
                       <div style={styles.sources}>
                         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -519,7 +626,7 @@ export default function UserPage() {
                       </div>
                     )}
 
-                    {chat.type === "ai" && !conversationMode && (
+                    {chat.type === "ai" && !conversationMode && !chat.isError && (
                       <div style={styles.messageActions}>
                         <button
                           onClick={() => speak(chat.content)}
@@ -554,16 +661,13 @@ export default function UserPage() {
               {isTyping && (
                 <div style={styles.aiMessageWrapper}>
                   <div style={styles.aiAvatar}>
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                      <path d="M6 7L10 11L14 7M6 11L10 15L14 11"
-                        stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
+                    <Avatar3D isSpeaking={true} size={36} />
                   </div>
                   <div style={styles.messageGroup}>
                     <div style={styles.typingIndicator}>
                       <span style={styles.typingDot}></span>
-                      <span style={styles.typingDot}></span>
-                      <span style={styles.typingDot}></span>
+                      <span style={{...styles.typingDot, animationDelay: '0.2s'}}></span>
+                      <span style={{...styles.typingDot, animationDelay: '0.4s'}}></span>
                     </div>
                   </div>
                 </div>
@@ -601,7 +705,7 @@ export default function UserPage() {
                   ref={inputRef}
                   type="text"
                   value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  onChange={handleInputChange}
                   placeholder={isListening ? "Listening..." : "Ask me anything..."}
                   style={styles.input}
                   disabled={loading || isListening}
@@ -670,12 +774,26 @@ const styles = {
     right: 0,
     bottom: 0,
     zIndex: 0,
-    pointerEvents: "none",
+    pointerEvents: "none", // Biarkan avatar background bisa di-interact
+    overflow: "hidden",
+  },
+  backgroundAvatarContainer: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    width: "75vh",
+    height: "75vh",
+    maxWidth: "900px",
+    maxHeight: "900px",
+    zIndex: 0,
+    pointerEvents: "auto", // Enable interactions
   },
   gradientOverlay: {
     position: "absolute",
     inset: 0,
     background: "linear-gradient(135deg, rgba(21, 60, 48, 0.02) 0%, rgba(45, 122, 95, 0.03) 100%)",
+    zIndex: 1,
   },
   floatingCircle1: {
     position: "absolute",
@@ -686,6 +804,7 @@ const styles = {
     top: "-150px",
     right: "-150px",
     animation: "float 25s ease-in-out infinite",
+    zIndex: 1,
   },
   floatingCircle2: {
     position: "absolute",
@@ -696,6 +815,7 @@ const styles = {
     bottom: "50px",
     left: "-100px",
     animation: "float 20s ease-in-out infinite 5s",
+    zIndex: 1,
   },
   floatingCircle3: {
     position: "absolute",
@@ -706,6 +826,7 @@ const styles = {
     top: "50%",
     right: "15%",
     animation: "float 30s ease-in-out infinite 10s",
+    zIndex: 1,
   },
   sidebar: {
     width: "280px",
@@ -856,7 +977,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     position: "relative",
-    zIndex: 1,
+    zIndex: 2, // Lebih tinggi dari background avatar
   },
   header: {
     height: "64px",
@@ -919,10 +1040,17 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     padding: "40px 20px",
+    position: "relative",
+    zIndex: 2,
   },
-  emptyIcon: {
+  avatarContainer: {
     marginBottom: "24px",
     animation: "float 3s ease-in-out infinite",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+    zIndex: 2,
   },
   emptyTitle: {
     fontSize: "28px",
@@ -935,6 +1063,7 @@ const styles = {
     color: "#64748B",
     marginBottom: "24px",
     textAlign: "center",
+    maxWidth: "400px",
   },
   conversationBadge: {
     display: "flex",
@@ -947,6 +1076,7 @@ const styles = {
     color: "#153C30",
     fontSize: "14px",
     fontWeight: "600",
+    marginTop: "8px",
   },
   pulseIndicator: {
     width: "12px",
@@ -978,11 +1108,11 @@ const styles = {
     width: "36px",
     height: "36px",
     borderRadius: "50%",
-    background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+    overflow: "hidden",
   },
   messageGroup: {
     maxWidth: "70%",
@@ -1003,6 +1133,14 @@ const styles = {
     borderRadius: "18px 18px 18px 4px",
     boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)",
     border: "1px solid #E5E7EB",
+  },
+  errorMessage: {
+    background: "#FEF2F2",
+    border: "1px solid #FECACA",
+    color: "#DC2626",
+    padding: "14px 18px",
+    borderRadius: "18px 18px 18px 4px",
+    boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)",
   },
   messageContent: {
     fontSize: "15px",
@@ -1268,6 +1406,15 @@ if (typeof document !== "undefined") {
       [style*="messageGroup"] {
         max-width: 85% !important;
       }
+      
+      [style*="avatarContainer"] {
+        transform: scale(0.8);
+      }
+      
+      [style*="backgroundAvatarContainer"] {
+        width: 60vh !important;
+        height: 60vh !important;
+      }
     }
     
     @media (max-width: 480px) {
@@ -1285,6 +1432,15 @@ if (typeof document !== "undefined") {
       
       [style*="messageGroup"] {
         max-width: 90% !important;
+      }
+      
+      [style*="avatarContainer"] {
+        transform: scale(0.7);
+      }
+      
+      [style*="backgroundAvatarContainer"] {
+        width: 50vh !important;
+        height: 50vh !important;
       }
     }
   `;
