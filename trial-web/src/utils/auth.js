@@ -31,3 +31,8 @@ export const clearAuth = () => {
   localStorage.removeItem("user");
   localStorage.removeItem("token");
 };
+
+export const logout = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+};
