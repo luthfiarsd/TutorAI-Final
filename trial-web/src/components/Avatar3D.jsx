@@ -12,12 +12,10 @@ function AvatarModel({ isSpeaking, isUserTyping }) {
   let scene = null;
 
   try {
-    const result = useGLTF(modelPath);
-    scene = result.scene;
-    console.log('✅ GLB Model loaded successfully from:', modelPath);
-  } catch (err) {
-    console.error('❌ Failed to load GLB model:', err);
-    setModelError(true);
+    gltf = useGLTF(modelPath);
+    scene = gltf.scene;
+  } catch {
+    // do nothing — useGLTF will suspend, fallback is used instead
   }
 
   useEffect(() => {

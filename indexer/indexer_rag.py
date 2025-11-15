@@ -13,6 +13,13 @@ import os
 from dotenv import load_dotenv
 import pypdf
 import tempfile
+import google.generativeai as genai 
+
+# OCR Dependencies
+import pypdf
+import pytesseract
+from pdf2image import convert_from_path
+from PIL import Image
 
 try:
     from chunker_embedder import chunk_text, embed_batches, embed_query, embed_text
@@ -52,6 +59,7 @@ def get_db_connection():
 class IndexRequest(BaseModel):
     document_id: int
     file_path: str
+    use_vision: bool = False
 
 
 class IndexResponse(BaseModel):
@@ -80,6 +88,132 @@ class RetrieveResponse(BaseModel):
     query: str
     results: List[ChunkResult]
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+    
+# Configure Tesseract path for Windows (adjust if needed)
+pytesseract.pytesseract.tesseract_cmd = r'tesseract/tesseract.exe'
+
+# OCR Code
+def extract_text_with_ocr(file_path: str, dpi: int = 300) -> str:
+    """
+    Extract text from PDF using OCR (for scanned/image-based PDFs)
+    
+    Args:
+        file_path: Path to PDF file
+        dpi: Resolution for image conversion (higher = better quality, slower)
+    
+    Returns:
+        OCR-extracted text
+    """
+    try:
+        print(f"Converting PDF to images for OCR (DPI: {dpi})...")
+        
+        images = convert_from_path(file_path, dpi=dpi)
+        
+        ocr_text = ""
+        for i, image in enumerate(images):
+            print(f"Processing page {i+1}/{len(images)} with OCR...")
+            page_text = pytesseract.image_to_string(image, lang='eng+ind')
+            ocr_text += page_text + "\n"
+        
+        print(f"OCR extraction complete: {len(ocr_text)} characters")
+        return ocr_text
+        
+    except Exception as e:
+        print(f"Error in OCR extraction: {e}")
+        return ""
+
+
+def extract_image_descriptions_from_pdf(file_path: str, dpi: int = 150) -> List[str]:
+    """
+    Extract image descriptions from PDF using Gemini 1.5 Flash (cheapest model)
+    
+    Args:
+        file_path: Path to PDF file
+        dpi: Resolution for image conversion (150 is sufficient for vision)
+    
+    Returns:
+        List of image descriptions
+    """
+    try:
+        print(f"Converting PDF to images for vision analysis...")
+        
+        images = convert_from_path(file_path, dpi=dpi)
+        
+        # Use Gemini 1.5 Flash (cheapest model with vision)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        descriptions = []
+        
+        for i, image in enumerate(images):
+            print(f"Analyzing page {i+1}/{len(images)} for visual content...")
+            
+            try:
+                response = model.generate_content([
+                    "Describe all images, diagrams, charts, graphs, and visual elements in this page. "
+                    "If no significant visual elements, respond 'No images'. Be concise.",
+                    image
+                ])
+                
+                description = response.text.strip()
+                
+                if description and description.lower() != "no images":
+                    descriptions.append(f"[Page {i+1} Visual]: {description}")
+                    print(f"  ✓ Found: {description[:60]}...")
+                    
+            except Exception as e:
+                print(f"  ⚠ Error on page {i+1}: {e}")
+                continue
+        
+        return descriptions
+        
+    except Exception as e:
+        print(f"❌ Vision extraction error: {e}")
+        return []
+
+
+def extract_text_from_pdf(file_path: str, use_ocr: bool = True, use_vision: bool = False) -> str:
+    """
+    Extract text from PDF with optional OCR and image description
+    
+    Args:
+        file_path: Path to PDF file
+        use_ocr: Use OCR if normal extraction yields little text
+        use_vision: Use Gemini Vision to describe images/diagrams
+    
+    Returns:
+        Extracted text with optional image descriptions
+    """
+    pdf_text = ""
+    
+    # Try normal text extraction first
+    try:
+        with open(file_path, "rb") as pdf_file:
+            pdf_reader = pypdf.PdfReader(pdf_file)
+            for page in pdf_reader.pages:
+                pdf_text += page.extract_text() + "\n"
+    except Exception as e:
+        print(f"Error in normal PDF extraction: {e}")
+    
+    # If extracted text is too short, use OCR
+    if use_ocr and len(pdf_text.strip()) < 100:
+        print("Text extraction yielded little content, switching to OCR...")
+        pdf_text = extract_text_with_ocr(file_path)
+    
+    # Optionally add image descriptions
+    if use_vision:
+        print("🖼️ Extracting image descriptions using Gemini Vision...")
+        image_descriptions = extract_image_descriptions_from_pdf(file_path)
+        
+        if image_descriptions:
+            pdf_text += "\n\n=== Visual Content Descriptions ===\n"
+            pdf_text += "\n\n".join(image_descriptions)
+            print(f"✓ Added {len(image_descriptions)} image descriptions")
+    
+    return pdf_text
 
 @app.get("/")
 async def root():
@@ -118,14 +252,6 @@ async def health_check():
 async def index_document(request: IndexRequest):
     """
     Process a PDF document: extract text, chunk, and store to database
-    Embeddings are generated separately via /embed endpoint
-
-    Args:
-        document_id: ID of the document in the documents table
-        file_path: Absolute path to the PDF file
-
-    Returns:
-        IndexResponse with success status and number of chunks created
     """
     try:
         # Update document status to processing
@@ -138,23 +264,22 @@ async def index_document(request: IndexRequest):
         )
         conn.commit()
 
-        # Read PDF file
+        # Check if file exists
         if not os.path.exists(request.file_path):
             raise HTTPException(
                 status_code=404, detail=f"File not found: {request.file_path}"
             )
 
-        # Extract text from PDF
+        # Extract text from PDF WITH OCR and optional Vision (ONLY ONCE)
         print(f"Extracting text from PDF: {request.file_path}")
-        pdf_text = ""
-
-        with open(request.file_path, "rb") as pdf_file:
-            pdf_reader = pypdf.PdfReader(pdf_file)
-            for page in pdf_reader.pages:
-                pdf_text += page.extract_text() + "\n"
+        pdf_text = extract_text_from_pdf(
+            request.file_path, 
+            use_ocr=True,
+            use_vision=request.use_vision  # ← Single extraction call
+        )
 
         if not pdf_text.strip():
-            raise HTTPException(status_code=400, detail="No text extracted from PDF")
+            raise HTTPException(status_code=400, detail="No text extracted from PDF (tried OCR)")
 
         print(f"Extracted {len(pdf_text)} characters from PDF")
 
@@ -234,6 +359,7 @@ async def index_document(request: IndexRequest):
             print(f"Error updating document status: {db_error}")
 
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/embed")
@@ -523,6 +649,218 @@ async def get_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/chunks/{chunk_id}")
+async def get_chunk_details(chunk_id: int):
+    """
+    Get detailed information about a specific chunk including its embedding
+    
+    Args:
+        chunk_id: ID of the chunk to retrieve
+    
+    Returns:
+        Chunk details with embedding vector
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT 
+                id, 
+                document_id, 
+                content, 
+                chunk_index, 
+                status,
+                embedding,
+                retry_count,
+                error_message,
+                created_at,
+                updated_at
+            FROM chunks 
+            WHERE id = %s
+            """,
+            (chunk_id,)
+        )
+        
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Chunk {chunk_id} not found")
+        
+        # Parse embedding (PostgreSQL vector to Python list)
+        embedding_vector = None
+        if result[5]:  # If embedding exists
+            # Convert pgvector to list
+            embedding_str = result[5].strip('[]')
+            embedding_vector = [float(x) for x in embedding_str.split(',')]
+        
+        chunk_data = {
+            "id": result[0],
+            "document_id": result[1],
+            "content": result[2],
+            "chunk_index": result[3],
+            "status": result[4],
+            "embedding": {
+                "exists": result[5] is not None,
+                "dimension": len(embedding_vector) if embedding_vector else 0,
+                "values": embedding_vector,  # Full embedding vector
+                "first_10_values": embedding_vector[:10] if embedding_vector else None,
+                "last_10_values": embedding_vector[-10:] if embedding_vector else None,
+            },
+            "retry_count": result[6],
+            "error_message": result[7],
+            "created_at": result[8].isoformat() if result[8] else None,
+            "updated_at": result[9].isoformat() if result[9] else None
+        }
+        
+        return chunk_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error retrieving chunk: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chunks/{chunk_id}/embedding")
+async def get_chunk_embedding_only(chunk_id: int):
+    """
+    Get ONLY the embedding vector for a chunk (for inspection)
+    
+    Args:
+        chunk_id: ID of the chunk
+    
+    Returns:
+        Raw embedding vector as array of floats
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT embedding FROM chunks WHERE id = %s",
+            (chunk_id,)
+        )
+        
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Chunk {chunk_id} not found")
+        
+        if not result[0]:
+            return {
+                "chunk_id": chunk_id,
+                "embedding": None,
+                "message": "No embedding generated yet"
+            }
+        
+        # Convert pgvector to list
+        embedding_str = result[0].strip('[]')
+        embedding_vector = [float(x) for x in embedding_str.split(',')]
+        
+        return {
+            "chunk_id": chunk_id,
+            "embedding": embedding_vector,
+            "dimension": len(embedding_vector),
+            "sample_values": {
+                "first_5": embedding_vector[:5],
+                "middle_5": embedding_vector[len(embedding_vector)//2:len(embedding_vector)//2+5],
+                "last_5": embedding_vector[-5:]
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error retrieving embedding: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/compare-embeddings")
+async def compare_embeddings(chunk_id1: int, chunk_id2: int):
+    """
+    Compare embeddings of two chunks to see their similarity
+    
+    Args:
+        chunk_id1: First chunk ID
+        chunk_id2: Second chunk ID
+    
+    Returns:
+        Comparison of two embeddings with cosine similarity
+    """
+    try:
+        import numpy as np
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get both embeddings
+        cursor.execute(
+            "SELECT id, content, embedding FROM chunks WHERE id IN (%s, %s)",
+            (chunk_id1, chunk_id2)
+        )
+        
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if len(results) != 2:
+            raise HTTPException(status_code=404, detail="One or both chunks not found")
+        
+        # Parse embeddings
+        chunks_data = []
+        for row in results:
+            if not row[2]:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Chunk {row[0]} has no embedding"
+                )
+            
+            embedding_str = row[2].strip('[]')
+            embedding = [float(x) for x in embedding_str.split(',')]
+            chunks_data.append({
+                "id": row[0],
+                "content": row[1][:100] + "..." if len(row[1]) > 100 else row[1],
+                "embedding": embedding
+            })
+        
+        # Calculate cosine similarity
+        vec1 = np.array(chunks_data[0]["embedding"])
+        vec2 = np.array(chunks_data[1]["embedding"])
+        
+        cosine_sim = np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+        
+        # Calculate euclidean distance
+        euclidean_dist = np.linalg.norm(vec1 - vec2)
+        
+        return {
+            "chunk_1": {
+                "id": chunks_data[0]["id"],
+                "content_preview": chunks_data[0]["content"],
+                "embedding_dimension": len(chunks_data[0]["embedding"])
+            },
+            "chunk_2": {
+                "id": chunks_data[1]["id"],
+                "content_preview": chunks_data[1]["content"],
+                "embedding_dimension": len(chunks_data[1]["embedding"])
+            },
+            "similarity_metrics": {
+                "cosine_similarity": float(cosine_sim),
+                "euclidean_distance": float(euclidean_dist),
+                "interpretation": "Higher cosine similarity (closer to 1) = more similar content"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error comparing embeddings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
