@@ -141,37 +141,40 @@ export default function UserPage() {
   };
 
   const speak = (text) => {
-    if ("speechSynthesis" in window && (voiceEnabled || conversationMode)) {
-      window.speechSynthesis.cancel();
+  // ✅ Biar bisa speak kapan saja, tidak harus voiceEnabled
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      const lang = detectLanguage(text);
-      utterance.lang = lang;
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
+    const utterance = new SpeechSynthesisUtterance(text);
+    const lang = detectLanguage(text);
+    utterance.lang = lang;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
 
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-        if (conversationMode) {
-          stopListening();
-        }
-      };
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      if (conversationMode) {
+        stopListening();
+      }
+    };
 
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        if (conversationMode) {
-          setTimeout(() => startListening(), 500);
-        }
-      };
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      if (conversationMode) {
+        setTimeout(() => startListening(), 500);
+      }
+    };
 
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        toast.error("Text-to-speech failed");
-      };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      toast.error("Text-to-speech failed");
+    };
 
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+    window.speechSynthesis.speak(utterance);
+  } else {
+    toast.error("Text-to-speech not supported in your browser");
+  }
+};
 
   const stopSpeaking = () => {
     if ("speechSynthesis" in window) {
@@ -214,6 +217,7 @@ export default function UserPage() {
   };
 
   const loadChatHistory = async () => {
+    stopSpeaking();
     try {
       const response = await chatAPI.getSessions();
       console.log("Chat sessions response:", response);
@@ -351,6 +355,7 @@ export default function UserPage() {
   };
 
   const startNewChat = () => {
+    stopSpeaking();
     setChats([]);
     setCurrentSessionId(null); // Reset session ID for new conversation
     setIsUserTyping(false);
@@ -465,9 +470,11 @@ export default function UserPage() {
         {/* Avatar Background yang Besar - BISA DIINTERAKSI & OPACITY TINGGI */}
         <div style={styles.backgroundAvatarContainer}>
           <Avatar3D
+            align ="center"
             isSpeaking={isSpeaking || isTyping}
             isUserTyping={isUserTyping}
-            background={true}
+            background={false}
+            size={400}
           />
         </div>
       </div>
@@ -896,8 +903,14 @@ export default function UserPage() {
                       !chat.isError && (
                         <div style={styles.messageActions}>
                           <button
-                            onClick={() => speak(chat.content)}
-                            disabled={isSpeaking}
+                            onClick={() => {
+                              if (isSpeaking) {
+                                stopSpeaking(); // jika lagi bicara → stop
+                              } else {
+                                speak(chat.content); // else → play
+                              }
+                            }}
+                            disabled={isTyping}
                             style={styles.actionButton}
                             title="Read aloud"
                           >
@@ -1067,8 +1080,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 0,
-    pointerEvents: "none", // Biarkan avatar background bisa di-interact
+    zIndex: 1,
     overflow: "hidden",
   },
   backgroundAvatarContainer: {
@@ -1081,7 +1093,7 @@ const styles = {
     maxWidth: "900px",
     maxHeight: "900px",
     zIndex: 0,
-    pointerEvents: "auto", // Enable interactions
+    pointerEvents: "auto", // TETAP "auto" - ini udah bener
   },
   gradientOverlay: {
     position: "absolute",
@@ -1091,40 +1103,13 @@ const styles = {
     zIndex: 1,
   },
   floatingCircle1: {
-    position: "absolute",
-    width: "500px",
-    height: "500px",
-    borderRadius: "50%",
-    background:
-      "radial-gradient(circle, rgba(21, 60, 48, 0.12) 0%, rgba(21, 60, 48, 0) 70%)",
-    top: "-150px",
-    right: "-150px",
-    animation: "float 25s ease-in-out infinite",
-    zIndex: 1,
+    display: "none", // Sembunyikan lingkaran pertama untuk tampilan yang lebih bersih
   },
   floatingCircle2: {
-    position: "absolute",
-    width: "400px",
-    height: "400px",
-    borderRadius: "50%",
-    background:
-      "radial-gradient(circle, rgba(45, 122, 95, 0.08) 0%, rgba(45, 122, 95, 0) 70%)",
-    bottom: "50px",
-    left: "-100px",
-    animation: "float 20s ease-in-out infinite 5s",
-    zIndex: 1,
+    display: "none", // Sembunyikan lingkaran pertama untuk tampilan yang lebih bersih
   },
   floatingCircle3: {
-    position: "absolute",
-    width: "300px",
-    height: "300px",
-    borderRadius: "50%",
-    background:
-      "radial-gradient(circle, rgba(21, 60, 48, 0.06) 0%, rgba(21, 60, 48, 0) 70%)",
-    top: "50%",
-    right: "15%",
-    animation: "float 30s ease-in-out infinite 10s",
-    zIndex: 1,
+    display: "none", // Sembunyikan lingkaran pertama untuk tampilan yang lebih bersih
   },
   sidebar: {
     width: "280px",
@@ -1369,6 +1354,7 @@ const styles = {
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
+    zIndex: 2,
   },
   emptyState: {
     flex: 1,
