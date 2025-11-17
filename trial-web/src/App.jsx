@@ -11,6 +11,7 @@ import AdminPage from "./pages/admin/AdminPage";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminDocuments from "./pages/admin/AdminDocuments";
 import AdminChats from "./pages/admin/AdminChats";
+import TestAvatar from "./components/TestAvatar";
 
 // Protected Route Component
 const ProtectedRoute = ({ children, adminOnly = false }) => {
