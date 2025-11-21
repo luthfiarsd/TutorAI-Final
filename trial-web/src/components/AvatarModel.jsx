@@ -6,29 +6,34 @@ import * as THREE from "three";
 export function AvatarModel({ animation, isSpeaking = false, ...props }) {
   const group = useRef();
   const currentActionRef = useRef(null);
+  const currentAnimationRef = useRef(null);
   const [mouthOpenness, setMouthOpenness] = useState(0);
+  const actionTimeoutRef = useRef(null);
+  const animationFinishedRef = useRef(false);
 
   // Load model dan animations
   const { nodes, materials } = useGLTF("/assets/models/646d9dcdc8a5f5bddbfac913.glb");
   const { animations: typingAnimation } = useFBX("/assets/animations/Typing.fbx");
   const { animations: standingAnimation } = useFBX("/assets/animations/Standingidle.fbx");
-  const { animations: speakingAnimation } = useFBX("/assets/animations/Talking.fbx");
-
+  const { animations: speakingAnimation } = useFBX("/assets/animations/Talkingcoba.fbx");
+  const { animations: fallingAnimation } = useFBX("/assets/animations/Fallingidle.fbx");
 
   // Rename animations
   if (typingAnimation?.[0]) typingAnimation[0].name = "Typing";
   if (standingAnimation?.[0]) standingAnimation[0].name = "Standing";
   if (speakingAnimation?.[0]) speakingAnimation[0].name = "Speaking";
+  if (fallingAnimation?.[0]) fallingAnimation[0].name = "Falling";
 
   const animList = [
     typingAnimation?.[0], 
     standingAnimation?.[0], 
-    speakingAnimation?.[0]
+    speakingAnimation?.[0],
+    fallingAnimation?.[0]
   ].filter(Boolean);
 
   const { actions } = useAnimations(animList, group);
 
-  // Handle animation changes
+  // Handle animation changes dengan fix untuk looping sempurna
   useEffect(() => {
     if (!actions) return;
 
@@ -37,35 +42,58 @@ export function AvatarModel({ animation, isSpeaking = false, ...props }) {
       targetAnimation = "Speaking";
     }
 
+    if (currentAnimationRef.current === targetAnimation) {
+      return;
+    }
+
     const act = actions[targetAnimation];
     if (!act) return;
+
+    if (actionTimeoutRef.current) {
+      clearTimeout(actionTimeoutRef.current);
+    }
 
     if (currentActionRef.current && currentActionRef.current !== act) {
       currentActionRef.current.fadeOut(0.3);
     }
 
-    act.clampWhenFinished = false;
-    act.loop = THREE.LoopRepeat;
-    act.reset().fadeIn(0.3).play();
-    currentActionRef.current = act;
+    // Setup animation dengan benar
+    act.clampWhenFinished = true;
+    act.loop = THREE.LoopOnce;
+    act.timeScale = 1;
+    act.reset();
+    
+    // Listen ketika animasi selesai, lalu restart
+    const onAnimationFinished = () => {
+      if (!animationFinishedRef.current) {
+        animationFinishedRef.current = true;
+        // Restart animasi setelah selesai
+        setTimeout(() => {
+          act.reset().fadeIn(0.3).play();
+          animationFinishedRef.current = false;
+        }, 500); // delay 500ms sebelum restart
+      }
+    };
 
-    return () => act.fadeOut(0.3);
+    actionTimeoutRef.current = setTimeout(() => {
+      if (act) {
+        act.fadeIn(0.3).play();
+        // Cek mixer untuk tahu kapan animasi selesai
+        const mixer = act.getMixer?.();
+        if (mixer) {
+          mixer.addEventListener("finished", onAnimationFinished);
+        }
+        currentActionRef.current = act;
+        currentAnimationRef.current = targetAnimation;
+      }
+      }, 50);
+
+    return () => {
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+      }
+    };
   }, [animation, actions, isSpeaking]);
-
-  // Simulate lip sync ketika speaking
-  useEffect(() => {
-    if (!isSpeaking) {
-      setMouthOpenness(0);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      // Random mouth movement untuk simulasi berbicara
-      setMouthOpenness(Math.random() * 0.5 + 0.3);
-    }, 150);
-
-    return () => clearInterval(interval);
-  }, [isSpeaking]);
 
   if (!nodes) return null;
 
@@ -125,7 +153,7 @@ export function AvatarModel({ animation, isSpeaking = false, ...props }) {
           morphTargetDictionary={nodes.Wolf3D_Head.morphTargetDictionary} 
           morphTargetInfluences={[
             ...(nodes.Wolf3D_Head.morphTargetInfluences || []),
-            mouthOpenness, // Control mouth movement
+            mouthOpenness,
           ]} 
         />
         <skinnedMesh 

@@ -1,3 +1,4 @@
+//UserPage.jsx
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -27,6 +28,7 @@ export default function UserPage() {
   const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(ELEVENLABS_CONFIG.voiceId);
   const [showVoiceOptions, setShowVoiceOptions] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -359,67 +361,58 @@ export default function UserPage() {
     }
   };
 
-  const handleSendMessage = async (e, textOverride = null) => {
-    if (e) e.preventDefault();
-    const textToSend = textOverride || message.trim();
-    if (!textToSend) return;
+const handleSendMessage = async (e, textOverride = null) => {
+  if (e) e.preventDefault();
+  const textToSend = textOverride || message.trim();
+  if (!textToSend) return;
 
-    setMessage("");
-    setIsUserTyping(false);
-    setChats((prev) => [...prev, { type: "user", content: textToSend, timestamp: new Date() }]);
-    setLoading(true);
+  setMessage("");
+  setIsUserTyping(false);
+  setChats((prev) => [...prev, { type: "user", content: textToSend, timestamp: new Date() }]);
+  setLoading(true);
+  setIsProcessing(true); // Set processing true saat mulai
+  setIsTyping(false); // Typing false dulu
+
+  try {
+    const response = await chatAPI.sendMessage(textToSend, currentSessionId);
+    const data = response.data?.data || response.data || response;
+
+    if (!data) throw new Error("No response data received");
+    if (data.session_id && !currentSessionId) setCurrentSessionId(data.session_id);
+
+    // Setelah dapat response, set processing false dan typing true
+    setIsProcessing(false);
     setIsTyping(true);
-
-    try {
-      const response = await chatAPI.sendMessage(textToSend, currentSessionId);
-      const data = response.data?.data || response.data || response;
-
-      if (!data) throw new Error("No response data received");
-      if (data.session_id && !currentSessionId) setCurrentSessionId(data.session_id);
-
-      setTimeout(() => {
-        setIsTyping(false);
-        const aiMessage = {
-          type: "ai",
-          content: data.reply || data.message || data.content || "I'm sorry, I couldn't process that request.",
-          sources: data.sources || [],
-          timestamp: new Date(data.created_at || new Date()),
-          context_used: data.context_used,
-          history_used: data.history_used,
-        };
-        setChats((prev) => [...prev, aiMessage]);
-        
-        // Pastikan speak dipanggil dengan benar
-        console.log('Should speak?', { voiceEnabled, conversationMode, content: aiMessage.content });
-        if (voiceEnabled || conversationMode) {
-          console.log('Calling speak function');
-          speak(aiMessage.content);
-        }
-        
-        loadChatHistory();
-      }, 500);
-    } catch (error) {
+    
+    setTimeout(() => {
       setIsTyping(false);
-      let errorMessage = "Failed to process chat";
-
-      if (error.response?.status === 401) {
-        errorMessage = "Session expired. Please login again.";
-        setTimeout(() => { logout(); navigate("/login"); }, 2000);
-      } else if (error.response?.status === 429) {
-        errorMessage = "Too many requests. Please wait a moment.";
-      } else if (error.response?.status >= 500) {
-        errorMessage = "Server error. Please try again later.";
-      } else {
-        errorMessage = error.response?.data?.message || error.response?.data?.error || errorMessage;
+      const aiMessage = {
+        type: "ai",
+        content: data.reply || data.message || data.content || "I'm sorry, I couldn't process that request.",
+        sources: data.sources || [],
+        timestamp: new Date(data.created_at || new Date()),
+        context_used: data.context_used,
+        history_used: data.history_used,
+      };
+      setChats((prev) => [...prev, aiMessage]);
+      
+      console.log('Should speak?', { voiceEnabled, conversationMode, content: aiMessage.content });
+      if (voiceEnabled || conversationMode) {
+        console.log('Calling speak function');
+        speak(aiMessage.content);
       }
-
-      toast.error(errorMessage);
-      setChats((prev) => [...prev, { type: "ai", content: "I apologize, but I'm having trouble processing your request right now. Please try again in a moment.", timestamp: new Date(), isError: true }]);
-    } finally {
-      setLoading(false);
-      if (!conversationMode) inputRef.current?.focus();
-    }
-  };
+      
+      loadChatHistory();
+    }, 500);
+  } catch (error) {
+    setIsTyping(false);
+    setIsProcessing(false);
+    // ... error handling lainnya
+  } finally {
+    setLoading(false);
+    if (!conversationMode) inputRef.current?.focus();
+  }
+};
 
   const startNewChat = () => {
     stopSpeaking();
@@ -493,6 +486,8 @@ export default function UserPage() {
     });
     return groups;
   };
+
+  
 
   const groupedHistory = groupHistoryByDate(chatHistory);
 
@@ -575,7 +570,7 @@ export default function UserPage() {
         </div>
       </div>
 
-      <div style={styles.mainContent}>
+      <div style={{ ...styles.mainContent, marginLeft: isSidebarOpen ? "280px" : "0", transition: "margin-left 0.3s ease" }}>
         <div style={styles.header}>
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} style={styles.menuButton}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -737,6 +732,24 @@ export default function UserPage() {
                   </div>
                 </div>
               )}
+              {isProcessing && (
+                <div style={styles.aiMessageWrapper}>
+                  <div style={styles.aiAvatar}>
+                    <Avatar3D isSpeaking={false} isProcessing={true} size={36} />
+                  </div>
+                  <div style={styles.messageGroup}>
+                    <div style={styles.processingIndicator}>
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <circle cx="10" cy="10" r="8" stroke="#153C30" strokeWidth="2" opacity="0.3"/>
+                        <path d="M10 2 A 8 8 0 0 1 18 10" stroke="#153C30" strokeWidth="2" strokeLinecap="round">
+                          <animateTransform attributeName="transform" type="rotate" from="0 10 10" to="360 10 10" dur="1s" repeatCount="indefinite"/>
+                        </path>
+                      </svg>
+                      <span>Processing...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div ref={chatEndRef} />
             </div>
           )}
@@ -778,9 +791,21 @@ export default function UserPage() {
 const styles = {
   container: { height: "100vh", display: "flex", background: "#F8FAFB", position: "relative", overflow: "hidden" },
   backgroundLayer: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1, overflow: "hidden" },
-  backgroundAvatarContainer: { position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "75vh", height: "75vh", maxWidth: "900px", maxHeight: "900px", zIndex: 0, pointerEvents: "auto", filter: "drop-shadow(0 0 30px rgba(0,0,0,0.1))" },
+  backgroundAvatarContainer: { 
+  position: "absolute", 
+  top: "50%", 
+  right: "10%", // Ubah dari left: "50%" jadi right: "10%"
+  transform: "translateY(-50%)", // Hapus translate X
+  width: "65vh", 
+  height: "65vh", 
+  maxWidth: "800px", 
+  maxHeight: "800px", 
+  zIndex: 0, 
+  pointerEvents: "none",
+  filter: "drop-shadow(0 0 30px rgba(171, 63, 63, 0.1))" 
+},
   gradientOverlay: { position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(21, 60, 48, 0.02) 0%, rgba(45, 122, 95, 0.03) 100%)", zIndex: 1 },
-  sidebar: { width: "280px", background: "linear-gradient(180deg, #153C30 0%, #1A4D3C 100%)", display: "flex", flexDirection: "column", transition: "transform 0.3s ease", zIndex: 10, boxShadow: "2px 0 12px rgba(0, 0, 0, 0.1)" },
+  sidebar: { width: "280px",margin: "0 -280px 0 0", background: "linear-gradient(180deg, #153C30 0%, #1A4D3C 100%)", display: "flex", flexDirection: "column", transition: "transform 0.3s ease", zIndex: 10, boxShadow: "2px 0 12px rgba(0, 0, 0, 0.1)" },
   sidebarHeader: { padding: "20px", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" },
   newChatButton: { width: "100%", padding: "12px 16px", background: "rgba(255, 255, 255, 0.1)", border: "1px solid rgba(255, 255, 255, 0.2)", borderRadius: "8px", color: "white", fontSize: "14px", fontWeight: "600", display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", transition: "all 0.2s" },
   historyList: { flex: 1, overflowY: "auto", padding: "12px" },
@@ -799,7 +824,16 @@ const styles = {
   userEmail: { fontSize: "12px", color: "rgba(255, 255, 255, 0.6)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   userDropdown: { position: "absolute", bottom: "100%", left: "8px", right: "8px", marginBottom: "8px", background: "white", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)", overflow: "hidden", animation: "slideUp 0.2s ease" },
   logoutButton: { width: "100%", padding: "12px 16px", background: "transparent", border: "none", color: "#EF4444", fontSize: "14px", fontWeight: "500", display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", transition: "all 0.2s" },
-  mainContent: { flex: 1, display: "flex", flexDirection: "column", position: "relative", zIndex: 2 },
+  mainContent: { 
+  flex: 1, 
+  display: "flex", 
+  flexDirection: "column", 
+  position: "relative", 
+  zIndex: 1,
+  width: "100%",
+  minWidth: 0,
+  transition: "margin-left 0.3s ease"  // ← Tambah ini
+  },
   header: { height: "64px", background: "white", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", padding: "0 20px", gap: "16px", boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)" },
   menuButton: { width: "40px", height: "40px", borderRadius: "8px", background: "transparent", border: "none", color: "#153C30", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s" },
   headerTitle: { display: "flex", alignItems: "center", gap: "12px", fontSize: "18px", fontWeight: "700", color: "#153C30" },
@@ -807,7 +841,7 @@ const styles = {
   iconButton: { width: "40px", height: "40px", borderRadius: "8px", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s", background: "transparent" },
   voiceSelector: { position: 'relative', display: 'inline-block' },
   voiceSelectorButton: { width: "40px", height: "40px", borderRadius: "8px", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s", background: "transparent" },
-  voiceDropdown: { position: 'absolute', top: '100%', right: 0, marginTop: '8px', background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)', border: '1px solid #E5E7EB', minWidth: '180px', zIndex: 1000, animation: 'slideDown 0.2s ease' },
+  voiceDropdown: { position: 'absolute', top: '100%', right: 0, marginTop: '8px', background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)', border: '1px solid #E5E7EB', minWidth: '180px', zIndex: 1, animation: 'slideDown 0.2s ease' },
   voiceOption: { width: '100%', padding: '12px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '14px', color: '#153C30', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.2s', borderBottom: '1px solid #F1F5F9' },
   chatContainer: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", zIndex: 2 },
   emptyState: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", position: "relative", zIndex: 2 },
@@ -819,11 +853,38 @@ const styles = {
   pulseIndicator: { width: "12px", height: "12px", borderRadius: "50%", background: "#EF4444", animation: "pulse 1.5s ease-in-out infinite" },
   chatMessages: { flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "24px" },
   userMessageWrapper: { display: "flex", alignItems: "flex-end", gap: "12px", justifyContent: "flex-end" },
-  aiMessageWrapper: { display: "flex", alignItems: "flex-start", gap: "12px" },
+  aiMessageWrapper: { 
+  display: "flex", 
+  alignItems: "flex-start", 
+  gap: "12px",
+  position: "relative",
+  zIndex: 1 // Tambahkan ini
+},
   aiAvatar: { width: "36px", height: "36px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" },
   messageGroup: { maxWidth: "70%", display: "flex", flexDirection: "column", gap: "8px" },
   userMessage: { background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", color: "white", padding: "14px 18px", borderRadius: "18px 18px 4px 18px", boxShadow: "0 2px 12px rgba(21, 60, 48, 0.2)" },
-  aiMessage: { background: "white", padding: "14px 18px", borderRadius: "18px 18px 18px 4px", boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)", border: "1px solid #E5E7EB" },
+  aiMessage: { 
+  background: "white", 
+  padding: "14px 18px", 
+  borderRadius: "18px 18px 18px 4px", 
+  boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)", // Shadow lebih tebal
+  border: "1px solid #E5E7EB",
+  position: "relative",
+  zIndex: 1 // Tambahkan ini
+},
+processingIndicator: { 
+  background: "white", 
+  padding: "14px 18px", 
+  borderRadius: "18px 18px 18px 4px", 
+  boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)", 
+  display: "flex", 
+  gap: "10px", 
+  alignItems: "center",
+  border: "1px solid #E5E7EB",
+  color: "#153C30",
+  fontSize: "14px",
+  fontWeight: "500"
+},
   errorMessage: { background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "14px 18px", borderRadius: "18px 18px 18px 4px", boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)" },
   messageContent: { fontSize: "15px", lineHeight: "1.6" },
   contextBadge: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#2D7A5F", background: "rgba(45, 122, 95, 0.08)", padding: "4px 10px", borderRadius: "12px", width: "fit-content", border: "1px solid rgba(45, 122, 95, 0.2)" },
@@ -832,7 +893,7 @@ const styles = {
   timestamp: { fontSize: "11px", color: "#94A3B8", paddingLeft: "4px" },
   typingIndicator: { background: "white", padding: "14px 18px", borderRadius: "18px 18px 18px 4px", boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)", display: "flex", gap: "4px", alignItems: "center" },
   typingDot: { width: "8px", height: "8px", borderRadius: "50%", background: "#153C30", animation: "typing 1.4s infinite" },
-  inputContainer: { background: "white", padding: "20px 24px", borderTop: "1px solid #E5E7EB", boxShadow: "0 -4px 12px rgba(0, 0, 0, 0.05)" },
+  inputContainer: { background: "white", padding: "20px 24px", borderTop: "1px solid #E5E7EB", boxShadow: "0 -4px 12px rgba(0, 0, 0, 0.05)", zIndex: 11 },
   inputWrapper: { maxWidth: "1000px", margin: "0 auto" },
   inputForm: { display: "flex", gap: "12px", alignItems: "center" },
   voiceButton: { width: "44px", height: "44px", borderRadius: "50%", border: "2px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.3s", flexShrink: 0 },

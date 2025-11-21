@@ -1,12 +1,14 @@
+//Avatar3D.jsx
 import { Canvas } from "@react-three/fiber";
 import { Experience } from "./Experience";
 
 export default function Avatar3D({ 
   isSpeaking = false, 
-  isUserTyping = false, 
+  isUserTyping = false,
+  isProcessing = false, 
   size = 300 
 }) {
-  console.log('Avatar3D props:', { isSpeaking, isUserTyping, size });
+  console.log('Avatar3D props:', { isSpeaking, isUserTyping, isProcessing, size });
   
   return (
     <div style={{ width: size, height: size * 1.2, position: "relative" }}>
@@ -17,7 +19,8 @@ export default function Avatar3D({
       >
         <Experience 
           isSpeaking={isSpeaking} 
-          isUserTyping={isUserTyping} 
+          isUserTyping={isUserTyping}
+          isProcessing={isProcessing}
         />
       </Canvas>
     </div>
