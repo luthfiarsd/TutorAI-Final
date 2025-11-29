@@ -19,7 +19,7 @@ try {
 # Database connection details - EDIT THESE
 $DB_HOST = "localhost"
 $DB_PORT = "5432"
-$DB_NAME = "tutorai_db"
+$DB_NAME = "tutorai"
 $DB_USER = "postgres"
 
 Write-Host "Database Configuration:" -ForegroundColor Cyan

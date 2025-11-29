@@ -1,6 +1,7 @@
 """
 TutorAI Indexer Service
 FastAPI service for PDF processing, text chunking, embedding, and semantic retrieval
+Cara run: uvicorn indexer_rag:app --reload --port 8000
 """
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
