@@ -1,16 +1,9 @@
-//AvatarModel.jsx
 import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
-import React, { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
+import React, { useEffect, useRef } from "react";
 
 export function AvatarModel({ animation, isSpeaking = false, ...props }) {
   const group = useRef();
-  const currentActionRef = useRef(null);
-  const currentAnimationRef = useRef(null);
-  const [mouthOpenness, setMouthOpenness] = useState(0);
-  const actionTimeoutRef = useRef(null);
-  const animationFinishedRef = useRef(false);
-
+  
   // Load model dan animations
   const { nodes, materials } = useGLTF("/assets/models/646d9dcdc8a5f5bddbfac913.glb");
   const { animations: typingAnimation } = useFBX("/assets/animations/Typing.fbx");
@@ -33,67 +26,27 @@ export function AvatarModel({ animation, isSpeaking = false, ...props }) {
 
   const { actions } = useAnimations(animList, group);
 
-  // Handle animation changes dengan fix untuk looping sempurna
+  // 🔥 FIX UTAMA - Gunakan pattern seperti Avatar.jsx
   useEffect(() => {
     if (!actions) return;
 
+    // Tentukan animasi yang harus diplay
     let targetAnimation = animation;
     if (isSpeaking) {
       targetAnimation = "Speaking";
     }
 
-    if (currentAnimationRef.current === targetAnimation) {
-      return;
-    }
+    const currentAction = actions[targetAnimation];
+    if (!currentAction) return;
 
-    const act = actions[targetAnimation];
-    if (!act) return;
-
-    if (actionTimeoutRef.current) {
-      clearTimeout(actionTimeoutRef.current);
-    }
-
-    if (currentActionRef.current && currentActionRef.current !== act) {
-      currentActionRef.current.fadeOut(0.3);
-    }
-
-    // Setup animation dengan benar
-    act.clampWhenFinished = true;
-    act.loop = THREE.LoopOnce;
-    act.timeScale = 1;
-    act.reset();
+    // ✅ Pattern dari Avatar.jsx - Simple dan Smooth!
+    currentAction.reset().fadeIn(0.5).play();
     
-    // Listen ketika animasi selesai, lalu restart
-    const onAnimationFinished = () => {
-      if (!animationFinishedRef.current) {
-        animationFinishedRef.current = true;
-        // Restart animasi setelah selesai
-        setTimeout(() => {
-          act.reset().fadeIn(0.3).play();
-          animationFinishedRef.current = false;
-        }, 500); // delay 500ms sebelum restart
-      }
-    };
-
-    actionTimeoutRef.current = setTimeout(() => {
-      if (act) {
-        act.fadeIn(0.3).play();
-        // Cek mixer untuk tahu kapan animasi selesai
-        const mixer = act.getMixer?.();
-        if (mixer) {
-          mixer.addEventListener("finished", onAnimationFinished);
-        }
-        currentActionRef.current = act;
-        currentAnimationRef.current = targetAnimation;
-      }
-      }, 50);
-
     return () => {
-      if (actionTimeoutRef.current) {
-        clearTimeout(actionTimeoutRef.current);
-      }
+      // Cleanup dengan fadeOut
+      currentAction.reset().fadeOut(0.5);
     };
-  }, [animation, actions, isSpeaking]);
+  }, [animation, isSpeaking, actions]);
 
   if (!nodes) return null;
 
@@ -151,10 +104,7 @@ export function AvatarModel({ animation, isSpeaking = false, ...props }) {
           material={materials.Wolf3D_Skin} 
           skeleton={nodes.Wolf3D_Head.skeleton} 
           morphTargetDictionary={nodes.Wolf3D_Head.morphTargetDictionary} 
-          morphTargetInfluences={[
-            ...(nodes.Wolf3D_Head.morphTargetInfluences || []),
-            mouthOpenness,
-          ]} 
+          morphTargetInfluences={nodes.Wolf3D_Head.morphTargetInfluences} 
         />
         <skinnedMesh 
           name="Wolf3D_Teeth" 

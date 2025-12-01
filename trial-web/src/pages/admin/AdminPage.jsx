@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { adminStatsAPI } from "../../lib/api";
 import Navbar from "../../components/Navbar";
 import AdminNav from "../../components/AdminNav";
 
 export default function AdminPage() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,6 +24,10 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleNavigation = (path) => {
+    navigate(path);
   };
 
   if (loading) {
@@ -208,11 +214,14 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Quick Actions */}
+                {/* Quick Actions */}
         <div style={styles.quickActions}>
           <h3 style={styles.sectionTitle}>Quick Actions</h3>
           <div style={styles.actionsGrid}>
-            <button style={styles.actionCard}>
+            <button 
+              style={styles.actionCard}
+              onClick={() => handleNavigation("/admin/documents")}
+            >
               <div style={styles.actionIcon}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                   <path d="M10 5V15M5 10H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -224,7 +233,10 @@ export default function AdminPage() {
               </div>
             </button>
 
-            <button style={styles.actionCard}>
+            <button 
+              style={styles.actionCard}
+              onClick={() => handleNavigation("/admin/chats")}
+            >
               <div style={styles.actionIcon}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                   <path d="M17 17L13 13M15 8C15 11.866 11.866 15 8 15C4.13401 15 1 11.866 1 8C1 4.13401 4.13401 1 8 1C11.866 1 15 4.13401 15 8Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -236,7 +248,10 @@ export default function AdminPage() {
               </div>
             </button>
 
-            <button style={styles.actionCard}>
+            <button 
+              style={styles.actionCard}
+              onClick={() => handleNavigation("/admin/chats")}
+            >
               <div style={styles.actionIcon}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                   <path d="M14 6V4C14 3.46957 13.7893 2.96086 13.4142 2.58579C13.0391 2.21071 12.5304 2 12 2H4C3.46957 2 2.96086 2.21071 2.58579 2.58579C2.21071 2.96086 2 3.46957 2 4V12C2 12.5304 2.21071 13.0391 2.58579 13.4142C2.96086 13.7893 3.46957 14 4 14H6M8 18H16C16.5304 18 17.0391 17.7893 17.4142 17.4142C17.7893 17.0391 18 16.5304 18 16V8C18 7.46957 17.7893 6.96086 17.4142 6.58579C17.0391 6.21071 16.5304 6 16 6H8C7.46957 6 6.96086 6.21071 6.58579 6.58579C6.21071 6.96086 6 7.46957 6 8V16C6 16.5304 6.21071 17.0391 6.58579 17.4142C6.96086 17.7893 7.46957 18 8 18Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -248,7 +263,10 @@ export default function AdminPage() {
               </div>
             </button>
 
-            <button style={styles.actionCard}>
+            <button 
+              style={styles.actionCard}
+              onClick={() => handleNavigation("/admin/users")}
+            >
               <div style={styles.actionIcon}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                   <path d="M10 18C14.4183 18 18 14.4183 18 10C18 5.58172 14.4183 2 10 2C5.58172 2 2 5.58172 2 10C2 14.4183 5.58172 18 10 18Z" stroke="currentColor" strokeWidth="2"/>

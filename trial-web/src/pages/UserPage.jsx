@@ -1,3 +1,4 @@
+// UserPage.jsx ((yang baru))
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -212,7 +213,7 @@ export default function UserPage() {
       </div>
 
       {/* Main Content */}
-      <div style={{ ...styles.mainContent, marginLeft: isSidebarOpen ? "280px" : "0" }}>
+      <div style={{ ...styles.mainContent, marginLeft: isSidebarOpen ? "0px" : "-280px" }}>
         {/* Header */}
         <div style={styles.header}>
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} style={styles.iconButton}>☰</button>
