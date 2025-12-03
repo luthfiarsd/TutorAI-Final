@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+//UserPage.jsx ((yang lama))
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { chatAPI } from "../lib/api";
@@ -568,9 +569,7 @@ const handleSendMessage = async (e, textOverride = null) => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div style={{ ...styles.mainContent, marginLeft: isSidebarOpen ? "280px" : "0" }}>
-        {/* Header */}
+      <div style={{ ...styles.mainContent, marginLeft: isSidebarOpen ? "280px" : "0", transition: "margin-left 0.3s ease" }}>
         <div style={styles.header}>
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} style={styles.menuButton}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
