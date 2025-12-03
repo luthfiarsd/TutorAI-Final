@@ -498,11 +498,9 @@ const handleSendMessage = async (e, textOverride = null) => {
         {chats.length > 0 && (
           <div style={styles.backgroundAvatarContainer}>
             <Avatar3D 
-              align="center" 
               isSpeaking={isAvatarSpeaking} 
-              isUserTyping={isUserTyping} 
-              background={false} 
-              size={400} 
+              isUserTyping={isProcessing} 
+              size={2000} 
             />
           </div>
         )}      
@@ -796,9 +794,9 @@ const styles = {
   transform: "translateY(-50%)", // Hapus translate X
   width: "65vh", 
   height: "65vh", 
-  maxWidth: "800px", 
-  maxHeight: "800px", 
-  zIndex: 0, 
+  maxWidth: "1920px", 
+  maxHeight: "1080px", 
+  zIndex: 4, 
   pointerEvents: "none",
   filter: "drop-shadow(0 0 30px rgba(171, 63, 63, 0.1))" 
 },

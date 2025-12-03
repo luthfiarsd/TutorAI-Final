@@ -6,11 +6,12 @@ import * as THREE from 'three';
 // --- Komponen Pemuat GLB dan Logika Animasi ---
 function AvatarModel({ isSpeaking, isUserTyping }) {
   // Load model utama (GLB)
-  const { scene } = useGLTF('/assets/models/npetani.glb');
+  const { scene , animations} = useGLTF('/assets/models/npetani.glb');
+  const { actions, names } = useAnimations(animations, scene);
   
   // Load animasi FBX
-  const thinkingAnim = useFBX('/assets/models/npetani.glb');
-  const speakingAnim = useFBX('/assets/models/acurigduduk.fbx');
+  const thinkingAnim = useGLTF('/assets/animations/aerobicCM.glb');
+  const speakingAnim = useGLTF('/assets/animations/dudukKebalik.glb');
   
   const meshRef = useRef();
   const mixer = useRef();
@@ -38,6 +39,7 @@ function AvatarModel({ isSpeaking, isUserTyping }) {
 
     let currentAnimation = null;
 
+    const idleAction = actions[names[0]];
     if (isSpeaking && speakingAnim?.animations?.[0]) {
       // Jika sedang berbicara (TTS aktif)
       currentAnimation = mixer.current.clipAction(speakingAnim.animations[0]);
@@ -51,14 +53,16 @@ function AvatarModel({ isSpeaking, isUserTyping }) {
       currentAnimation.reset().fadeIn(0.5).play();
       
     } else {
-      // Idle state - model diam atau animasi default
-      // Bisa tambahkan idle animation jika ada
+      idleAction.reset().fadeIn(0.5).play();
     }
 
     return () => {
       if (currentAnimation) {
         currentAnimation.fadeOut(0.3);
       }
+      
+      idleAction.fadeOut(0.5);
+
     };
   }, [isSpeaking, isUserTyping, thinkingAnim, speakingAnim]);
 
@@ -66,11 +70,6 @@ function AvatarModel({ isSpeaking, isUserTyping }) {
   useFrame((state, delta) => {
     if (mixer.current) {
       mixer.current.update(delta);
-    }
-
-    // Rotasi pelan saat idle
-    if (meshRef.current && !isSpeaking && !isUserTyping) {
-      meshRef.current.rotation.y += 0.005;
     }
   });
 
