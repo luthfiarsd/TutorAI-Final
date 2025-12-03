@@ -1,70 +1,87 @@
-import React, { useRef, useMemo, useEffect, Suspense } from 'react';
+import React, { useRef, useEffect, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { useGLTF, useAnimations, Html } from '@react-three/drei';
+import { useGLTF, useFBX, useAnimations, Html } from '@react-three/drei';
 import * as THREE from 'three';
 
 // --- Komponen Pemuat GLB dan Logika Animasi ---
 function AvatarModel({ isSpeaking, isUserTyping }) {
-  // Ganti '/model.glb' dengan path file GLB Anda jika berbeda
-  const { scene, animations } = useGLTF('/assets/models/npetani.glb');
-  const { actions, names } = useAnimations(animations, scene);
+  // Load model utama (GLB)
+  const { scene } = useGLTF('/assets/models/npetani.glb');
+  
+  // Load animasi FBX
+  const thinkingAnim = useFBX('/assets/models/npetani.glb');
+  const speakingAnim = useFBX('/assets/models/acurigduduk.fbx');
   
   const meshRef = useRef();
+  const mixer = useRef();
 
-  // Pastikan scene memiliki referensi agar animasi dapat diputar
+  // Setup AnimationMixer
   useEffect(() => {
+    if (!scene) return;
+    
     meshRef.current = scene;
+    mixer.current = new THREE.AnimationMixer(scene);
+
+    return () => {
+      if (mixer.current) {
+        mixer.current.stopAllAction();
+      }
+    };
   }, [scene]);
 
-  // Logika Animasi
+  // Logika Animasi berdasarkan state
   useEffect(() => {
-    if (!names || names.length === 0) return;
+    if (!mixer.current) return;
 
-    // Nama animasi yang akan diputar saat idle (ganti jika Anda punya nama animasi idle spesifik)
-    const idleAction = actions[names[0]]; 
+    // Stop semua animasi yang sedang berjalan
+    mixer.current.stopAllAction();
 
-    // Stop semua animasi
-    Object.values(actions).forEach(action => action.stop());
+    let currentAnimation = null;
 
-    if (isSpeaking) {
-      // Jika berbicara: Putar animasi bicara/interaksi (jika ada)
-      // Contoh: Ganti 'Talking' dengan nama animasi bicara di GLB Anda
-      const talkAction = actions['Talking'] || idleAction; 
-      talkAction.reset().fadeIn(0.2).play();
-    } else if (isUserTyping) {
-      // Jika memproses: Putar animasi loading/thinking
-      // Contoh: Ganti 'Thinking' dengan nama animasi berpikir di GLB Anda
-      const thinkAction = actions['Thinking'] || idleAction;
-      thinkAction.reset().fadeIn(0.5).play();
+    if (isSpeaking && speakingAnim?.animations?.[0]) {
+      // Jika sedang berbicara (TTS aktif)
+      currentAnimation = mixer.current.clipAction(speakingAnim.animations[0]);
+      currentAnimation.setLoop(THREE.LoopRepeat);
+      currentAnimation.reset().fadeIn(0.3).play();
+      
+    } else if (isUserTyping && thinkingAnim?.animations?.[0]) {
+      // Jika sedang thinking/processing
+      currentAnimation = mixer.current.clipAction(thinkingAnim.animations[0]);
+      currentAnimation.setLoop(THREE.LoopRepeat);
+      currentAnimation.reset().fadeIn(0.5).play();
+      
     } else {
-      // Jika idle: Putar animasi idle
-      idleAction.reset().fadeIn(0.5).play();
+      // Idle state - model diam atau animasi default
+      // Bisa tambahkan idle animation jika ada
     }
 
-    // Cleanup: Fade out animasi saat komponen di-unmount/state berubah
     return () => {
-      idleAction.fadeOut(0.5);
+      if (currentAnimation) {
+        currentAnimation.fadeOut(0.3);
+      }
     };
+  }, [isSpeaking, isUserTyping, thinkingAnim, speakingAnim]);
 
-  }, [isSpeaking, isUserTyping, actions, names]);
+  // Update AnimationMixer setiap frame
+  useFrame((state, delta) => {
+    if (mixer.current) {
+      mixer.current.update(delta);
+    }
 
-  // Opsional: Buat model berputar pelan saat idle
-  useFrame(() => {
+    // Rotasi pelan saat idle
     if (meshRef.current && !isSpeaking && !isUserTyping) {
       meshRef.current.rotation.y += 0.005;
     }
   });
 
-
-  // Model GLB perlu di-scale dan diposisikan agar pas di tengah Canvas
-  // Nilai scale dan posisi ini SANGAT bergantung pada ukuran model GLB Anda
-  const scaleFactor = 1; // Sesuaikan jika model Anda terlalu besar/kecil
+  // Sesuaikan scale dan posisi model
+  const scaleFactor = 1;
   
   return (
     <primitive 
       object={scene} 
       scale={scaleFactor} 
-      position={[0, -1.5, 0]} // Angkat sedikit agar tidak tenggelam (sesuaikan)
+      position={[0, -1.5, 0]} 
     />
   );
 }
@@ -77,11 +94,10 @@ export default function Avatar3D({ isSpeaking, isUserTyping, size = 100 }) {
     <div style={{ width: canvasSize, height: canvasSize, margin: '0 auto' }}>
       <Canvas 
         shadows
-        // Atur posisi kamera agar model terlihat penuh
         camera={{ position: [0, 0, 4], fov: 40 }} 
       >
         <Suspense fallback={<Html center>Loading 3D Model...</Html>}>
-          {/* Pencahayaan Studio Sederhana */}
+          {/* Pencahayaan Studio */}
           <ambientLight intensity={0.8} />
           <spotLight position={[5, 10, 5]} angle={0.3} penumbra={1} intensity={2} castShadow />
 
