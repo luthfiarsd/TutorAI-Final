@@ -21,6 +21,7 @@ export default function AdminUsers() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -39,6 +40,8 @@ export default function AdminUsers() {
       };
 
       const response = await adminUsersAPI.getUsers(params);
+      console.log("API Response:", response.data); // Debug log
+      
       setUsers(response.data.data.users || []);
       setTotalPages(
         Math.ceil((response.data.data.pagination.total || 0) / limit)
@@ -46,20 +49,100 @@ export default function AdminUsers() {
       setError(null);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to load users");
-      console.error(err);
+      console.error("Load users error:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const openEditModal = (user) => {
+    console.log("Opening edit modal for user:", user); // Debug log
     setEditingUser({ ...user });
     setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    setEditingUser(null);
+    setShowEditModal(false);
   };
 
   const openDeleteModal = (user) => {
     setUserToDelete(user);
     setShowDeleteModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    setUserToDelete(null);
+    setShowDeleteModal(false);
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+
+    try {
+      setIsSubmitting(true);
+      
+      // Prepare data sesuai dengan struktur database
+      const updateData = {
+        name: editingUser.name, // Gunakan 'name' bukan 'full_name'
+        email: editingUser.email,
+        role: editingUser.role,
+        is_active: editingUser.is_active,
+      };
+
+      console.log("Updating user with data:", updateData); // Debug log
+      
+      const response = await adminUsersAPI.updateUser(editingUser.id, updateData);
+      console.log("Update response:", response); // Debug log
+
+      // Reload users after successful update
+      await loadUsers();
+      closeEditModal();
+      
+      // Show success message
+      setError(null);
+      alert("✅ User updated successfully!");
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || "Failed to update user";
+      setError(errorMsg);
+      alert("❌ " + errorMsg);
+      console.error("Update error:", err.response || err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      setIsSubmitting(true);
+      console.log("Deleting user:", userToDelete.id); // Debug log
+      
+      const response = await adminUsersAPI.deleteUser(userToDelete.id);
+      console.log("Delete response:", response); // Debug log
+
+      // Reload users after successful delete
+      await loadUsers();
+      closeDeleteModal();
+      
+      setError(null);
+      alert("✅ User deleted successfully!");
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || "Failed to delete user";
+      setError(errorMsg);
+      alert("❌ " + errorMsg);
+      console.error("Delete error:", err.response || err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditChange = (field, value) => {
+    setEditingUser((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   return (
@@ -103,7 +186,7 @@ export default function AdminUsers() {
         />
 
         <button style={styles.refreshButton} onClick={loadUsers}>
-          Refresh
+         Refresh
         </button>
       </div>
 
@@ -140,7 +223,7 @@ export default function AdminUsers() {
                 ) : (
                   users.map((user) => (
                     <tr key={user.id} style={styles.tableRow}>
-                      <td style={styles.tableCell}>{user.full_name}</td>
+                      <td style={styles.tableCell}>{user.name || "N/A"}</td>
                       <td style={styles.tableCell}>{user.email}</td>
                       <td style={styles.tableCell}>
                         <span
@@ -169,8 +252,18 @@ export default function AdminUsers() {
                         {new Date(user.created_at).toLocaleDateString()}
                       </td>
                       <td style={styles.tableCell}>
-                        <button style={styles.editButton}>️ Edit</button>
-                        <button style={styles.deleteButton}>️ Delete</button>
+                        <button
+                          style={styles.editButton}
+                          onClick={() => openEditModal(user)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          style={styles.deleteButton}
+                          onClick={() => openDeleteModal(user)}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -178,7 +271,177 @@ export default function AdminUsers() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div style={styles.paginationContainer}>
+              <button
+                style={{
+                  ...styles.paginationButton,
+                  ...(currentPage === 1 ? styles.paginationButtonDisabled : {}),
+                }}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                ← Previous
+              </button>
+
+              <span style={styles.paginationInfo}>
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                style={{
+                  ...styles.paginationButton,
+                  ...(currentPage === totalPages
+                    ? styles.paginationButtonDisabled
+                    : {}),
+                }}
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && editingUser && (
+        <div style={styles.modalOverlay} onClick={closeEditModal}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>✏️ Edit User</h2>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Name *</label>
+              <input
+                type="text"
+                value={editingUser.name || ""}
+                onChange={(e) => handleEditChange("name", e.target.value)}
+                style={styles.input}
+                placeholder="Enter full name"
+                required
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Email *</label>
+              <input
+                type="email"
+                value={editingUser.email || ""}
+                onChange={(e) => handleEditChange("email", e.target.value)}
+                style={styles.input}
+                placeholder="Enter email address"
+                required
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Role *</label>
+              <select
+                value={editingUser.role || "user"}
+                onChange={(e) => handleEditChange("role", e.target.value)}
+                style={styles.select}
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Status *</label>
+              <select
+                value={editingUser.is_active ? "active" : "inactive"}
+                onChange={(e) =>
+                  handleEditChange("is_active", e.target.value === "active")
+                }
+                style={styles.select}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div style={styles.infoBox}>
+              <p style={styles.infoText}>
+                <strong>User ID:</strong> {editingUser.id}
+              </p>
+              <p style={styles.infoText}>
+                <strong>Created:</strong>{" "}
+                {new Date(editingUser.created_at).toLocaleString()}
+              </p>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button
+                style={styles.cancelButton}
+                onClick={closeEditModal}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                style={styles.saveButton}
+                onClick={handleUpdateUser}
+                disabled={isSubmitting || !editingUser.name || !editingUser.email}
+              >
+                {isSubmitting ? "⏳ Saving..." : "💾 Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && userToDelete && (
+        <div style={styles.modalOverlay} onClick={closeDeleteModal}>
+          <div
+            style={styles.modalContentSmall}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={styles.modalTitle}>⚠️ Confirm Delete</h2>
+            <p style={styles.deleteMessage}>
+              Are you sure you want to delete user{" "}
+              <strong>{userToDelete.name || userToDelete.email}</strong>?
+            </p>
+            <p style={styles.deleteWarning}>
+              ⚠️ This action cannot be undone. All user data will be permanently removed.
+            </p>
+
+            <div style={styles.infoBox}>
+              <p style={styles.infoText}>
+                <strong>Email:</strong> {userToDelete.email}
+              </p>
+              <p style={styles.infoText}>
+                <strong>Role:</strong> {userToDelete.role}
+              </p>
+              <p style={styles.infoText}>
+                <strong>Status:</strong>{" "}
+                {userToDelete.is_active ? "Active" : "Inactive"}
+              </p>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button
+                style={styles.cancelButton}
+                onClick={closeDeleteModal}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                style={styles.deleteConfirmButton}
+                onClick={handleDeleteUser}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "⏳ Deleting..." : "🗑️ Delete User"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </AdminLayout>
   );
@@ -201,14 +464,13 @@ const styles = {
     fontSize: "14px",
   },
   refreshButton: {
-    padding: "10px 20px",
-    background: "#153C30",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontWeight: "500",
-    transition: "background 0.2s",
+  background: "linear-gradient(135deg, #153C30, #2D7A5F)",
+  color: "#fff",
+  padding: "10px 20px",
+  borderRadius: "12px",
+  border: "none",
+  cursor: "pointer",
+  transition: "transform 0.3s ease",
   },
   table: {
     width: "100%",
@@ -230,6 +492,7 @@ const styles = {
   },
   tableRow: {
     borderBottom: "1px solid #f0f0f0",
+    transition: "background 0.2s",
   },
   tableCell: {
     padding: "12px",
@@ -241,6 +504,7 @@ const styles = {
     borderRadius: "12px",
     fontSize: "12px",
     fontWeight: "500",
+    display: "inline-block",
   },
   editButton: {
     padding: "6px 12px",
@@ -251,6 +515,7 @@ const styles = {
     cursor: "pointer",
     fontSize: "13px",
     marginRight: "6px",
+    transition: "all 0.2s",
   },
   deleteButton: {
     padding: "6px 12px",
@@ -260,6 +525,7 @@ const styles = {
     borderRadius: "6px",
     cursor: "pointer",
     fontSize: "13px",
+    transition: "all 0.2s",
   },
   errorBox: {
     padding: "15px",
@@ -267,5 +533,168 @@ const styles = {
     color: "#c33",
     borderRadius: "6px",
     marginBottom: "20px",
+    border: "1px solid #fcc",
+  },
+  paginationContainer: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "20px",
+    marginTop: "30px",
+    padding: "20px",
+  },
+  paginationButton: {
+    padding: "10px 20px",
+    background: "#153C30",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "500",
+    fontSize: "14px",
+    transition: "background 0.2s",
+  },
+  paginationButtonDisabled: {
+    background: "#ccc",
+    cursor: "not-allowed",
+    opacity: 0.6,
+  },
+  paginationInfo: {
+    fontSize: "14px",
+    color: "#333",
+    fontWeight: "500",
+  },
+  modalOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "rgba(0, 0, 0, 0.5)",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1000,
+    backdropFilter: "blur(4px)",
+  },
+  modalContent: {
+    background: "white",
+    padding: "30px",
+    borderRadius: "12px",
+    width: "90%",
+    maxWidth: "500px",
+    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+    maxHeight: "90vh",
+    overflowY: "auto",
+  },
+  modalContentSmall: {
+    background: "white",
+    padding: "30px",
+    borderRadius: "12px",
+    width: "90%",
+    maxWidth: "450px",
+    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+  },
+  modalTitle: {
+    margin: "0 0 20px 0",
+    fontSize: "24px",
+    color: "#153C30",
+    fontWeight: "600",
+  },
+  formGroup: {
+    marginBottom: "20px",
+  },
+  label: {
+    display: "block",
+    marginBottom: "8px",
+    fontSize: "14px",
+    fontWeight: "500",
+    color: "#333",
+  },
+  input: {
+    width: "100%",
+    padding: "10px 14px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+    fontSize: "14px",
+    boxSizing: "border-box",
+    transition: "border 0.2s",
+  },
+  select: {
+    width: "100%",
+    padding: "10px 14px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+    fontSize: "14px",
+    boxSizing: "border-box",
+    cursor: "pointer",
+    background: "white",
+  },
+  modalActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "10px",
+    marginTop: "25px",
+  },
+  cancelButton: {
+    padding: "10px 20px",
+    background: "#f5f5f5",
+    color: "#333",
+    border: "1px solid #ddd",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "500",
+    fontSize: "14px",
+    transition: "background 0.2s",
+  },
+  saveButton: {
+    padding: "10px 20px",
+    background: "#153C30",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "500",
+    fontSize: "14px",
+    transition: "background 0.2s",
+  },
+  deleteConfirmButton: {
+    padding: "10px 20px",
+    background: "#c62828",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "500",
+    fontSize: "14px",
+    transition: "background 0.2s",
+  },
+  deleteMessage: {
+    fontSize: "15px",
+    color: "#333",
+    marginBottom: "10px",
+    lineHeight: "1.5",
+  },
+  deleteWarning: {
+    fontSize: "13px",
+    color: "#c62828",
+    fontWeight: "500",
+    marginBottom: "15px",
+    padding: "10px",
+    background: "#fff3f3",
+    borderRadius: "6px",
+    border: "1px solid #ffcdd2",
+  },
+  infoBox: {
+    background: "#f9f9f9",
+    padding: "12px",
+    borderRadius: "8px",
+    marginTop: "15px",
+    border: "1px solid #e0e0e0",
+  },
+  infoText: {
+    fontSize: "13px",
+    color: "#666",
+    margin: "5px 0",
   },
 };

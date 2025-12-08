@@ -1,11 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import toast from "react-hot-toast";
-import { authAPI } from "../lib/api";
-import { saveAuth } from "../utils/auth";
 
 export default function Register() {
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -26,77 +21,37 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validasi client-side
     if (formData.password !== formData.confirmPassword) {
-      toast.error("Passwords do not match");
+      alert("Passwords do not match");
       return;
     }
 
     if (formData.password.length < 6) {
-      toast.error("Password must be at least 6 characters");
-      return;
-    }
-
-    if (!formData.name || !formData.email) {
-      toast.error("Please fill in all fields");
-      return;
-    }
-
-    // Validasi email sederhana
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      toast.error("Please enter a valid email address");
+      alert("Password must be at least 6 characters");
       return;
     }
 
     setLoading(true);
 
     try {
-      // Siapkan data untuk register (exclude confirmPassword)
+      // Actual API call implementation
       const { confirmPassword, ...registerData } = formData;
-      
-      console.log("Sending register request:", registerData);
-      
-      const response = await authAPI.register(registerData);
-      console.log("Register response:", response);
-      
-      const { user, token } = response.data.data;
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(registerData)
+      });
 
-      // Save authentication data
-      saveAuth(user, token);
-      toast.success("Registration successful! Welcome to TutorAI.");
-
-      // Navigate based on user role
-      if (user.role === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/home");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Registration failed');
       }
+
+      alert("Registration successful! Please login.");
+      window.location.href = "/login";
     } catch (error) {
-      console.error("Register error details:", error);
-      
-      if (error.response) {
-        // Server responded with error status
-        console.error("Response status:", error.response.status);
-        console.error("Response data:", error.response.data);
-        
-        if (error.response.status === 400) {
-          toast.error(error.response.data?.message || "Invalid registration data");
-        } else if (error.response.status === 409) {
-          toast.error("Email already exists. Please use a different email.");
-        } else if (error.response.status === 500) {
-          toast.error("Server error. Please try again later.");
-        } else {
-          toast.error(error.response.data?.message || "Registration failed");
-        }
-      } else if (error.request) {
-        // Request was made but no response received
-        console.error("No response received:", error.request);
-        toast.error("Network error. Please check your connection.");
-      } else {
-        // Something else happened
-        toast.error(error.message || "An unexpected error occurred");
-      }
+      console.error("Register error:", error);
+      alert(error.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -128,11 +83,26 @@ export default function Register() {
           </div>
           <h1 style={styles.brandName}>TutorAI</h1>
           <p style={styles.brandTagline}>
-            Advanced AI-powered Master of Agriculture learning platform
+            Join thousands of students learning smarter with AI-powered education
           </p>
         </div>
 
-        {/* <div style={styles.benefitsList}>
+        {/* <div style={styles.statsGrid}>
+          <div style={styles.statItem}>
+            <div style={styles.statNumber}>10K+</div>
+            <div style={styles.statLabel}>Active Students</div>
+          </div>
+          <div style={styles.statItem}>
+            <div style={styles.statNumber}>98%</div>
+            <div style={styles.statLabel}>Satisfaction Rate</div>
+          </div>
+          <div style={styles.statItem}>
+            <div style={styles.statNumber}>24/7</div>
+            <div style={styles.statLabel}>AI Support</div>
+          </div>
+        </div> */}
+
+        <div style={styles.benefitsList}>
           <div style={styles.benefitItem}>
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M16 6L7.5 14.5L4 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -157,7 +127,7 @@ export default function Register() {
             </svg>
             <span>Multi-Language Support (ID & EN)</span>
           </div>
-        </div> */}
+        </div>
       </div>
 
       {/* Right Panel */}
@@ -165,12 +135,12 @@ export default function Register() {
         <div style={styles.formWrapper}>
           <div style={styles.header}>
             <h2 style={styles.title}>Create your account</h2>
-            {/* <p style={styles.subtitle}>
+            <p style={styles.subtitle}>
               Start your personalized learning journey today
-            </p> */}
+            </p>
           </div>
 
-          <form onSubmit={handleSubmit} style={styles.formArea}>
+          <div style={styles.formArea}>
             <div style={styles.inputGroup}>
               <label style={styles.label}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
@@ -296,7 +266,7 @@ export default function Register() {
             </div>
 
             <button
-              type="submit"
+              onClick={handleSubmit}
               disabled={loading}
               style={{
                 ...styles.submitButton,
@@ -319,7 +289,7 @@ export default function Register() {
                 </>
               )}
             </button>
-          </form>
+          </div>
 
           <div style={styles.divider}>
             <div style={styles.dividerLine}></div>
@@ -329,18 +299,18 @@ export default function Register() {
 
           <div style={styles.footer}>
             <span style={styles.footerText}>Already have an account?</span>
-            <Link to="/login" style={styles.footerLink}>
+            <a href="/login" style={styles.footerLink}>
               Sign in
-            </Link>
+            </a>
           </div>
         </div>
 
-        {/* <div style={styles.legal}>
+        <div style={styles.legal}>
           By creating an account, you agree to our{" "}
           <a href="#" style={styles.legalLink}>Terms of Service</a>
           {" "}and{" "}
           <a href="#" style={styles.legalLink}>Privacy Policy</a>
-        </div> */}
+        </div>
       </div>
     </div>
   );
@@ -435,6 +405,31 @@ const styles = {
     color: "rgba(255, 255, 255, 0.85)",
     lineHeight: "1.7",
     maxWidth: "400px",
+  },
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: "16px",
+    marginBottom: "32px",
+  },
+  statItem: {
+    background: "rgba(255, 255, 255, 0.1)",
+    backdropFilter: "blur(10px)",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
+    borderRadius: "12px",
+    padding: "20px 16px",
+    textAlign: "center",
+  },
+  statNumber: {
+    fontSize: "26px",
+    fontWeight: "800",
+    color: "white",
+    marginBottom: "4px",
+  },
+  statLabel: {
+    fontSize: "12px",
+    color: "rgba(255, 255, 255, 0.75)",
+    fontWeight: "500",
   },
   benefitsList: {
     display: "flex",

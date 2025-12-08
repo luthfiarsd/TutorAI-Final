@@ -49,9 +49,15 @@
   transform: translateY(-1px);
 }
 .btn-primary {
-  background: #153c30;
-  color: white;
+  background: linear-gradient(135deg, #153C30, #2D7A5F);
+  color: #fff;
+  transition: background 0.3s ease, transform 0.1s;
 }
+
+.btn-primary:hover:not(.btn-disabled) {
+  filter: brightness(1.05);
+}
+
 .btn-danger {
   background: #c62828;
   color: white;

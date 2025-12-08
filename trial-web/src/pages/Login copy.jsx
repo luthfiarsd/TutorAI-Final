@@ -1,11 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import toast from "react-hot-toast";
-import { authAPI } from "../lib/api";
-import { saveAuth } from "../utils/auth";
 
 export default function Login() {
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -28,20 +23,34 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await authAPI.login(formData);
-      const { user, token } = response.data.data;
+      // Actual API call implementation
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
 
-      saveAuth(user, token);
-      toast.success("Welcome back");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Invalid credentials');
+      }
 
+      const data = await response.json();
+      const { user, token } = data.data;
+
+      // Save authentication data
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('token', token);
+
+      // Navigate based on user role
       if (user.role === "admin") {
-        navigate("/admin");
+        window.location.href = "/admin";
       } else {
-        navigate("/home");
+        window.location.href = "/home";
       }
     } catch (error) {
       console.error("Login error:", error);
-      toast.error(error.response?.data?.message || "Invalid credentials");
+      alert(error.message || "Invalid credentials. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -51,21 +60,30 @@ export default function Login() {
     e.preventDefault();
     
     if (!resetEmail) {
-      toast.error("Please enter your email address");
+      alert("Please enter your email address");
       return;
     }
 
     setResetLoading(true);
 
     try {
-      const response = await authAPI.resetPassword({ email: resetEmail });
-      
-      toast.success("Password reset link has been sent to your email!");
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to send reset email');
+      }
+
+      alert("Password reset link has been sent to your email!");
       setShowResetModal(false);
       setResetEmail("");
     } catch (error) {
       console.error("Reset password error:", error);
-      toast.error(error.response?.data?.message || "Failed to send reset email. Please try again.");
+      alert(error.message || "Failed to send reset email. Please try again.");
     } finally {
       setResetLoading(false);
     }
@@ -133,12 +151,12 @@ export default function Login() {
       {/* Left Panel */}
       <div style={styles.leftPanel}>
         <div style={styles.brandSection}>
-          <div style={styles.logoContainer}>
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <div style={styles.logoMark}>
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
               <path
-                d="M12 12L20 20L28 12M12 20L20 28L28 20"
+                d="M14 14L24 24L34 14M14 24L24 34L34 24"
                 stroke="white"
-                strokeWidth="2.5"
+                strokeWidth="3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -146,13 +164,11 @@ export default function Login() {
           </div>
           <h1 style={styles.brandName}>TutorAI</h1>
           <p style={styles.brandTagline}>
-            Advanced AI-powered Master of Agriculture learning platform
+            Advanced AI-powered learning platform designed for the next generation of learners
           </p>
         </div>
-      
 
-
-        {/* <div style={styles.featuresList}>
+        <div style={styles.featuresList}>
           <div style={styles.featureItem}>
             <div style={styles.featureIcon}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -192,22 +208,9 @@ export default function Login() {
               <div style={styles.featureDesc}>Access curated educational materials</div>
             </div>
           </div>
-        </div> */}
+        </div>
 
-        {/* <div style={styles.testimonial}>
-          <div style={styles.quoteIcon}>"</div>
-          <p style={styles.quote}>
-            TutorAI transformed the way I learn. The AI responses are incredibly
-            accurate and helpful for my studies.
-          </p>
-          <div style={styles.author}>
-            <div style={styles.authorAvatar}>JD</div>
-            <div>
-              <div style={styles.authorName}>Jessica Davis</div>
-              <div style={styles.authorTitle}>Computer Science Student</div>
-            </div>
-          </div>
-        </div> */}
+       
       </div>
 
       {/* Right Panel */}
@@ -220,12 +223,12 @@ export default function Login() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} style={styles.form}>
+          <div style={styles.form}>
             <div style={styles.inputGroup}>
               <label style={styles.label}>
-               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
-                  <rect x="2" y="4" width="12" height="9" rx="1" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M2 6L8 9L14 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
+                  <path d="M2 4H14M2 8H14M2 12H14"
+                    stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
                 Email Address
               </label>
@@ -292,7 +295,7 @@ export default function Login() {
             </div>
 
             <button
-              type="submit"
+              onClick={handleSubmit}
               disabled={loading}
               style={{
                 ...styles.submitButton,
@@ -315,7 +318,7 @@ export default function Login() {
                 </>
               )}
             </button>
-          </form>
+          </div>
 
           <div style={styles.divider}>
             <div style={styles.dividerLine}></div>
@@ -325,20 +328,20 @@ export default function Login() {
 
           <div style={styles.footer}>
             <span style={styles.footerText}>Don't have an account?</span>
-            <Link to="/register" style={styles.footerLink}>
+            <a href="/register" style={styles.footerLink}>
               Create account
-            </Link>
+            </a>
           </div>
         </div>
 
-        {/* <div style={styles.bottomNote}>
+        <div style={styles.bottomNote}>
           <p style={styles.noteText}>
             By signing in, you agree to our{" "}
             <a href="#" style={styles.noteLink}>Terms of Service</a>
             {" "}and{" "}
             <a href="#" style={styles.noteLink}>Privacy Policy</a>
           </p>
-        </div> */}
+        </div>
       </div>
     </div>
   );
@@ -350,7 +353,6 @@ const styles = {
     minHeight: "100vh",
     position: "relative",
     overflow: "hidden",
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   },
   backgroundLayer: {
     position: "fixed",
@@ -368,33 +370,33 @@ const styles = {
   },
   floatingCircle1: {
     position: "absolute",
-    width: "550px",
-    height: "550px",
+    width: "600px",
+    height: "600px",
     borderRadius: "50%",
     background: "radial-gradient(circle, rgba(21, 60, 48, 0.15) 0%, rgba(21, 60, 48, 0) 70%)",
-    top: "-180px",
-    right: "-180px",
-    animation: "float 22s ease-in-out infinite",
+    top: "-200px",
+    right: "-200px",
+    animation: "float 25s ease-in-out infinite",
   },
   floatingCircle2: {
     position: "absolute",
-    width: "420px",
-    height: "420px",
+    width: "400px",
+    height: "400px",
     borderRadius: "50%",
     background: "radial-gradient(circle, rgba(45, 122, 95, 0.1) 0%, rgba(45, 122, 95, 0) 70%)",
-    bottom: "-120px",
-    left: "-120px",
-    animation: "float 18s ease-in-out infinite 5s",
+    bottom: "-100px",
+    left: "-100px",
+    animation: "float 20s ease-in-out infinite 5s",
   },
   floatingCircle3: {
     position: "absolute",
-    width: "320px",
-    height: "320px",
+    width: "350px",
+    height: "350px",
     borderRadius: "50%",
     background: "radial-gradient(circle, rgba(21, 60, 48, 0.08) 0%, rgba(21, 60, 48, 0) 70%)",
     top: "50%",
     left: "40%",
-    animation: "float 28s ease-in-out infinite 10s",
+    animation: "float 30s ease-in-out infinite 10s",
   },
   modalOverlay: {
     position: "fixed",
@@ -451,43 +453,42 @@ const styles = {
     gap: "16px",
   },
   leftPanel: {
-  flex: "0 0 48%",
-  background: "linear-gradient(135deg, #153C30 0%, #1A4D3C 50%, #2D7A5F 100%)",
-  padding: "60px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-  position: "relative",
-  zIndex: 1,
+    flex: "0 0 50%",
+    background: "linear-gradient(135deg, #153C30 0%, #1A4D3C 50%, #2D7A5F 100%)",
+    padding: "60px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    position: "relative",
+    zIndex: 1,
   },
   brandSection: {
-    marginBottom: "32px",
+    marginBottom: "40px",
   },
-  logoContainer: {
-    width: "68px",
-    height: "68px",
+  logoMark: {
+    width: "80px",
+    height: "80px",
     background: "rgba(255, 255, 255, 0.1)",
-    borderRadius: "16px",
+    borderRadius: "20px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: "20px",
+    marginBottom: "24px",
     backdropFilter: "blur(10px)",
     border: "1px solid rgba(255, 255, 255, 0.2)",
   },
-
   brandName: {
-    fontSize: "42px",
+    fontSize: "48px",
     fontWeight: "800",
     color: "white",
-    marginBottom: "12px",
+    marginBottom: "16px",
     letterSpacing: "-0.03em",
   },
   brandTagline: {
-    fontSize: "17px",
+    fontSize: "18px",
     color: "rgba(255, 255, 255, 0.85)",
     lineHeight: "1.7",
-    maxWidth: "400px",
+    maxWidth: "450px",
   },
   featuresList: {
     display: "flex",
@@ -530,9 +531,6 @@ const styles = {
     border: "1px solid rgba(255, 255, 255, 0.2)",
   },
   quoteIcon: {
-    fontSize: "64px",
-    color: "rgba(255, 255, 255, 0.2)",
-    lineHeight: "1",
     marginBottom: "16px",
   },
   quote: {
@@ -586,10 +584,10 @@ const styles = {
     margin: "0 auto",
   },
   header: {
-    marginBottom: "36px",
+    marginBottom: "40px",
   },
   title: {
-    fontSize: "34px",
+    fontSize: "36px",
     fontWeight: "800",
     color: "#153C30",
     marginBottom: "8px",
@@ -603,7 +601,7 @@ const styles = {
   form: {
     display: "flex",
     flexDirection: "column",
-    gap: "20px",
+    gap: "24px",
   },
   inputGroup: {
     display: "flex",
@@ -637,7 +635,7 @@ const styles = {
   },
   input: {
     width: "100%",
-    padding: "13px 16px",
+    padding: "14px 16px",
     fontSize: "15px",
     border: "2px solid #E5E7EB",
     borderRadius: "10px",
@@ -664,7 +662,7 @@ const styles = {
     transition: "color 0.2s",
   },
   submitButton: {
-    padding: "15px",
+    padding: "16px",
     background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)",
     color: "white",
     border: "none",
@@ -692,7 +690,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: "16px",
-    margin: "28px 0",
+    margin: "32px 0",
   },
   dividerLine: {
     flex: 1,
