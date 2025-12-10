@@ -13,6 +13,7 @@ import adminUsersRoutes from "./routes/adminUsers.js";
 import adminDocumentsRoutes from "./routes/adminDocuments.js";
 import adminChatsRoutes from "./routes/adminChats.js";
 import adminStatsRoutes from "./routes/adminStats.js";
+import feedbackRoutes from "./routes/feedback.js";
 
 // Import database
 import pool from "./utils/db.js";
@@ -62,6 +63,7 @@ app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/chat", chatLimiter);
 app.use("/api/admin", generalLimiter);
+app.use("/api/feedback", feedbackRoutes);
 
 // Serve uploaded files statically
 const uploadsDir = path.join(__dirname, "..", "uploads");

@@ -37,6 +37,8 @@ export default function UserPage() {
   const voiceDropdownRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const audioRef = useRef(null);
+  // Tambahkan state untuk tracking feedback
+  const [feedbackStates, setFeedbackStates] = useState({}); // { chatIndex: { rating, feedbackId } }
 
   useEffect(() => {
     const userData = getUser();
@@ -393,6 +395,7 @@ const handleSendMessage = async (e, textOverride = null) => {
         timestamp: new Date(data.created_at || new Date()),
         context_used: data.context_used,
         history_used: data.history_used,
+        chat_id: data.chat_id || data.id,
       };
       setChats((prev) => [...prev, aiMessage]);
       
@@ -413,6 +416,61 @@ const handleSendMessage = async (e, textOverride = null) => {
   }
 };
 
+const handleFeedback = async (chatIndex, rating) => {
+  const chat = chats[chatIndex];
+  if (!chat.chat_id) {
+    toast.error("Cannot submit feedback for this message");
+    return;
+  }
+
+  try {
+    const currentFeedback = feedbackStates[chatIndex];
+
+    // Jika user klik rating yang sama, hapus feedback (toggle off)
+    if (currentFeedback?.rating === rating) {
+      if (currentFeedback?.feedbackId) {
+        await chatAPI.deleteFeedback(currentFeedback.feedbackId);
+        setFeedbackStates((prev) => {
+          const newState = { ...prev };
+          delete newState[chatIndex];
+          return newState;
+        });
+        toast.success("Feedback removed");
+      }
+      return;
+    }
+
+    let response;
+    let feedbackId;
+
+    // Submit atau update feedback
+    if (currentFeedback?.feedbackId) {
+      // Update existing feedback
+      response = await chatAPI.updateFeedback(currentFeedback.feedbackId, rating);
+      feedbackId = currentFeedback.feedbackId;
+      toast.success(rating === 1 ? "Changed to like" : "Changed to dislike");
+    } else {
+      // Create new feedback
+      response = await chatAPI.submitFeedback(chat.chat_id, rating);
+      feedbackId = response.data?.data?.feedback?.id || response.data?.feedback?.id;
+      toast.success(rating === 1 ? "Thanks for the feedback!" : "Thanks for letting us know");
+    }
+
+    // Update state
+    setFeedbackStates((prev) => ({
+      ...prev,
+      [chatIndex]: {
+        rating,
+        feedbackId,
+      },
+    }));
+  } catch (error) {
+    console.error("Failed to submit feedback:", error);
+    toast.error("Failed to submit feedback");
+  }
+};
+
+
   const startNewChat = () => {
     stopSpeaking();
     setChats([]);
@@ -432,9 +490,23 @@ const handleSendMessage = async (e, textOverride = null) => {
       if (sessionData?.messages) {
         const formattedChats = sessionData.messages.flatMap((msg) => [
           { type: "user", content: msg.message, timestamp: new Date(msg.created_at) },
-          { type: "ai", content: msg.reply, sources: msg.sources || [], timestamp: new Date(msg.created_at) },
+          { type: "ai", content: msg.reply, sources: msg.sources || [], timestamp: new Date(msg.created_at) 
+            , chat_id: msg.id
+          },
         ]);
         setChats(formattedChats);
+        const newFeedbackStates = {};
+        sessionData.messages.forEach((msg, idx) => {
+          if (msg.feedback) {
+            const aiMessageIndex = (idx * 2) + 1; // AI message ada di index ganjil
+            newFeedbackStates[aiMessageIndex] = {
+              rating: msg.feedback.rating,
+              feedbackId: msg.feedback.id
+            };
+          }
+        });
+        setFeedbackStates(newFeedbackStates);
+
         setIsSidebarOpen(false);
         toast.success("Conversation loaded - you can continue chatting!");
       }
@@ -709,8 +781,51 @@ const handleSendMessage = async (e, textOverride = null) => {
                             <path d="M8 3L11 7L8 11M2 5H6V9H2V5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                           </svg>
                         </button>
+                        
+                        <button
+                          onClick={() => handleFeedback(index, 1)}
+                          style={{
+                            ...styles.actionButton,
+                            background: feedbackStates[index]?.rating === 1 ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                            borderColor: feedbackStates[index]?.rating === 1 ? '#10B981' : '#E5E7EB',
+                            color: feedbackStates[index]?.rating === 1 ? '#10B981' : '#64748B'
+                          }}
+                          title="Like this response"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <path 
+                              d="M3 7V12H5V7H3ZM12 7C12 6.45 11.55 6 11 6H8.5L9 3.5V3.35C9 3.15 8.925 2.975 8.8 2.85L8.15 2.2L4.575 5.775C4.35 6 4.25 6.275 4.25 6.5V11C4.25 11.55 4.7 12 5.25 12H10C10.45 12 10.85 11.725 11.025 11.325L12.75 7.825C12.825 7.675 12.85 7.5 12.85 7.35V7.1C12.85 7.05 12.85 7 12.85 6.95L12 7Z" 
+                              fill={feedbackStates[index]?.rating === 1 ? 'currentColor' : 'none'}
+                              stroke="currentColor" 
+                              strokeWidth="1"
+                            />
+                          </svg>
+                        </button>
+                        
+                        {/* TAMBAHKAN TOMBOL DISLIKE */}
+                        <button
+                          onClick={() => handleFeedback(index, -1)}
+                          style={{
+                            ...styles.actionButton,
+                            background: feedbackStates[index]?.rating === -1 ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                            borderColor: feedbackStates[index]?.rating === -1 ? '#EF4444' : '#E5E7EB',
+                            color: feedbackStates[index]?.rating === -1 ? '#EF4444' : '#64748B'
+                          }}
+                          title="Dislike this response"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <path 
+                              d="M11 7V2H9V7H11ZM2 7C2 7.55 2.45 8 3 8H5.5L5 10.5V10.65C5 10.85 5.075 11.025 5.2 11.15L5.85 11.8L9.425 8.225C9.65 8 9.75 7.725 9.75 7.5V3C9.75 2.45 9.3 2 8.75 2H4C3.55 2 3.15 2.275 2.975 2.675L1.25 6.175C1.175 6.325 1.15 6.5 1.15 6.65V6.9C1.15 6.95 1.15 7 1.15 7.05L2 7Z" 
+                              fill={feedbackStates[index]?.rating === -1 ? 'currentColor' : 'none'}
+                              stroke="currentColor" 
+                              strokeWidth="1"
+                            />
+                          </svg>
+                        </button>
                       </div>
                     )}
+
+                
                     <span style={styles.timestamp}>{new Date(chat.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
                   {chat.type === "user" && <div style={styles.userAvatar}>{user?.name?.charAt(0).toUpperCase()}</div>}

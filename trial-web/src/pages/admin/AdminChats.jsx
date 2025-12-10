@@ -211,6 +211,7 @@ export default function AdminChats() {
                   <th style={tableHeaderStyle}>User</th>
                   <th style={tableHeaderStyle}>Message</th>
                   <th style={tableHeaderStyle}>Language</th>
+                  <th style={tableHeaderStyle}>Feedback</th>
                   <th style={tableHeaderStyle}>Timestamp</th>
                   <th style={tableHeaderStyle}>Actions</th>
                 </tr>
@@ -219,7 +220,7 @@ export default function AdminChats() {
                 {!chats || chats.length === 0 ? (
                   <tr>
                     <td
-                      colSpan="5"
+                      colSpan="6"
                       style={{
                         textAlign: "center",
                         padding: "40px",
@@ -264,6 +265,73 @@ export default function AdminChats() {
                           {chat.language === "id" ? "ID" : "EN"}
                         </span>
                       </td>
+                      <td style={tableCellStyle}>
+                        {chat.feedback_rating === 1 ? (
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid #10B981",
+                              background: "#ECFDF5",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M7 22V11M2 13V20C2 21.1046 2.89543 22 4 22H17.4262C18.907 22 20.1662 20.9197 20.3914 19.4562L21.4683 12.4562C21.7479 10.6389 20.3418 9 18.5032 9H15C14.4477 9 14 8.55228 14 8V4.46584C14 3.10399 12.896 2 11.5342 2C11.2093 2 10.915 2.1913 10.7831 2.48812L7.26394 10.4061C7.10344 10.7673 6.74532 11 6.35013 11H4C2.89543 11 2 11.8954 2 13Z"
+                                stroke="#10B981"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                            <span
+                              style={{ color: "#059669", fontWeight: 600, fontSize: "12px" }}
+                            >
+                              Liked
+                            </span>
+                          </div>
+                        ) : chat.feedback_rating === -1 ? (
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid #EF4444",
+                              background: "#FEF2F2",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M17 2V13M22 11V4C22 2.89543 21.1046 2 20 2H6.57376C5.09299 2 3.83379 3.08027 3.6086 4.54383L2.53165 11.5438C2.25211 13.3611 3.65823 15 5.49679 15H9C9.55228 15 10 15.4477 10 16V19.5342C10 20.896 11.104 22 12.4658 22C12.7907 22 13.085 21.8087 13.2169 21.5119L16.7361 13.5939C16.8966 13.2327 17.2547 13 17.6499 13H20C21.1046 13 22 12.1046 22 11Z"
+                                stroke="#EF4444"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                            <span
+                              style={{ color: "#DC2626", fontWeight: 600, fontSize: "12px" }}
+                            >
+                              Disliked
+                            </span>
+                          </div>
+                        ) : (
+                          <span
+                            style={{
+                              color: "#94A3B8",
+                              fontSize: "12px",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            No feedback
+                          </span>
+                        )}
+                      </td>
                       <td style={{ ...tableCellStyle, color: "#64748B" }}>
                         {new Date(chat.created_at).toLocaleString()}
                       </td>
@@ -273,6 +341,12 @@ export default function AdminChats() {
                           style={buttonView}
                         >
                           View
+                          {chat.feedback_rating === 1 && (
+                            <span style={{ marginLeft: "6px" }}></span>
+                          )}
+                          {chat.feedback_rating === -1 && (
+                            <span style={{ marginLeft: "6px" }}></span>
+                          )}
                         </button>
                         <button
                           onClick={() => openDeleteModal(chat)}

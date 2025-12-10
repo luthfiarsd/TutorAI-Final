@@ -47,6 +47,22 @@ export const authAPI = {
   getMe: () => api.get("/auth/me"),
 };
 
+export const feedbackAPI = {
+  // Submit or update feedback
+  submit: (chatId, rating, comment = null) =>
+    api.post("/feedback", { chat_id: chatId, rating, comment }),
+
+  // Update existing feedback
+  update: (feedbackId, rating, comment = null) =>
+    api.put(`/feedback/${feedbackId}`, { rating, comment }),
+
+  // Delete feedback
+  delete: (feedbackId) => api.delete(`/feedback/${feedbackId}`),
+
+  // Get feedback for specific chat
+  getForChat: (chatId) => api.get(`/feedback/chat/${chatId}`),
+};
+
 // Chat API
 export const chatAPI = {
   sendMessage: (message, sessionId = null) => {
@@ -67,7 +83,19 @@ export const chatAPI = {
   getSessions: () => api.get("/chat/sessions"),
   getSession: (id) => api.get(`/chat/sessions/${id}`),
   deleteSession: (id) => api.delete(`/chat/sessions/${id}`),
+
+  submitFeedback: (chatId, rating, comment = null) =>
+    api.post("/feedback", { chat_id: chatId, rating, comment }),
+
+  updateFeedback: (feedbackId, rating, comment = null) =>
+    api.put(`/feedback/${feedbackId}`, { rating, comment }),
+
+  deleteFeedback: (feedbackId) => api.delete(`/feedback/${feedbackId}`),
+
+  getFeedbackForChat: (chatId) => api.get(`/feedback/chat/${chatId}`),
 };
+
+
 
 // Admin - Users API
 export const adminUsersAPI = {

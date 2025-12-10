@@ -91,18 +91,21 @@ router.get(
       // Get chats
       const result = await pool.query(
         `SELECT 
-         ch.id, 
-         ch.message as user_message, 
-         ch.reply as ai_response, 
-         ch.language, 
-         ch.sources, 
-         ch.created_at,
-         p.id as user_id, p.name as user_name, p.email as user_email
-       FROM chat_history ch
-       LEFT JOIN profiles p ON ch.user_id = p.id
-       ${whereClause}
-       ORDER BY ch.created_at DESC
-       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+          ch.id, 
+          ch.message as user_message, 
+          ch.reply as ai_response, 
+          ch.language, 
+          ch.sources, 
+          ch.created_at,
+          p.id as user_id, p.name as user_name, p.email as user_email,
+          f.rating as feedback_rating,
+          f.comment as feedback_comment
+        FROM chat_history ch
+        LEFT JOIN profiles p ON ch.user_id = p.id
+        LEFT JOIN feedback f ON ch.id = f.chat_id
+        ${whereClause}
+        ORDER BY ch.created_at DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
         [...queryParams, limit, offset]
       );
 

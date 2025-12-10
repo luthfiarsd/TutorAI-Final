@@ -175,7 +175,7 @@ router.get("/sessions", async (req, res) => {
 
 /**
  * GET /api/chat/sessions/:id
- * Get specific session with all messages
+ * Get specific session with all messages and feedback
  */
 router.get("/sessions/:id", async (req, res) => {
   try {
@@ -204,20 +204,47 @@ router.get("/sessions/:id", async (req, res) => {
       });
     }
 
-    // Get all messages in this session
+    // Get all messages in this session WITH feedback
     const messagesResult = await pool.query(
-      `SELECT id, message, reply, language, sources, created_at
-       FROM chat_history
-       WHERE session_id = $1
-       ORDER BY created_at ASC`,
-      [sessionId]
+      `SELECT 
+        ch.id,
+        ch.message,
+        ch.reply,
+        ch.language,
+        ch.sources,
+        ch.created_at,
+        f.id as feedback_id,
+        f.rating as feedback_rating,
+        f.comment as feedback_comment
+       FROM chat_history ch
+       LEFT JOIN feedback f ON f.chat_id = ch.id AND f.user_id = $2
+       WHERE ch.session_id = $1
+       ORDER BY ch.created_at ASC`,
+      [sessionId, userId]
     );
+
+    // Format messages with feedback
+    const messages = messagesResult.rows.map((row) => ({
+      id: row.id,
+      message: row.message,
+      reply: row.reply,
+      language: row.language,
+      sources: row.sources,
+      created_at: row.created_at,
+      feedback: row.feedback_id
+        ? {
+            id: row.feedback_id,
+            rating: row.feedback_rating,
+            comment: row.feedback_comment,
+          }
+        : null,
+    }));
 
     res.json({
       success: true,
       data: {
         session: sessionResult.rows[0],
-        messages: messagesResult.rows,
+        messages: messages,
       },
     });
   } catch (error) {
