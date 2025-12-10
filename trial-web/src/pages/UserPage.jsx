@@ -8,6 +8,7 @@ import Avatar3D from "../components/Avatar3D";
 import MarkdownMessage from "../components/MarkdownMessage";
 import { ELEVENLABS_CONFIG, ELEVENLABS_VOICES } from "../config/elevenlabs";
 
+
 export default function UserPage() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -1485,18 +1486,23 @@ const styles = {
 
   // Header
   header: { 
-    height: "64px", 
-    background: "white", 
-    borderBottom: "1px solid #E5E7EB", 
-    display: "flex", 
-    alignItems: "center", 
-    padding: "0 20px", 
-    gap: "16px", 
-    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)" 
-  },
+  height: "64px",
+  minHeight: "64px",        // ✅ Prevent height collapse
+  background: "white", 
+  borderBottom: "1px solid #E5E7EB", 
+  display: "flex", 
+  alignItems: "center", 
+  padding: "0 20px", 
+  gap: "12px",              // ✅ Reduce gap sedikit
+  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+  flexShrink: 0             // ✅ Prevent shrinking
+},
   menuButton: { 
-    width: "40px", 
-    height: "40px", 
+    width: "50px", 
+    height: "50px",
+    minWidth: "50px",
+    minHeight: "50px",
+    flexShrink: 0,
     borderRadius: "8px", 
     background: "transparent", 
     border: "none", 
@@ -1516,22 +1522,27 @@ const styles = {
     color: "#153C30" 
   },
   headerActions: { 
-    marginLeft: "auto", 
-    display: "flex", 
-    gap: "8px" 
-  },
+  marginLeft: "auto", 
+  display: "flex", 
+  gap: "8px",
+  flexShrink: 0,            // ✅ Prevent shrinking
+  alignItems: "center"      // ✅ Keep aligned
+},
   iconButton: { 
-    width: "40px", 
-    height: "40px", 
-    borderRadius: "8px", 
-    border: "1px solid #E5E7EB", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    cursor: "pointer", 
-    transition: "all 0.2s", 
-    background: "transparent" 
-  },
+  width: "50px",          
+  height: "50px", 
+  minWidth: "50px",       
+  minHeight: "50px",
+  borderRadius: "8px", 
+  border: "1px solid #E5E7EB", 
+  display: "flex", 
+  alignItems: "center", 
+  justifyContent: "center", 
+  cursor: "pointer", 
+  transition: "all 0.2s", 
+  background: "transparent",
+  flexShrink: 0          
+},
 
   // Voice Selector
   voiceSelector: { 
@@ -1540,8 +1551,11 @@ const styles = {
     zIndex: 100
   },
   voiceSelectorButton: { 
-    width: "40px", 
-    height: "40px", 
+    width: "50px", 
+    height: "50px",
+    minWidth: "50px",
+    minHeight: "50px",
+    flexShrink: 0,
     borderRadius: "8px", 
     border: "1px solid #E5E7EB", 
     display: "flex", 
@@ -1817,8 +1831,8 @@ const styles = {
     alignItems: "center" 
   },
   voiceButton: { 
-    width: "44px", 
-    height: "44px", 
+    width: "50px", 
+    height: "50px", 
     borderRadius: "50%", 
     border: "2px solid #E5E7EB", 
     display: "flex", 
