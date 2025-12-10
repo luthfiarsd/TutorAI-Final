@@ -1,4 +1,4 @@
-//UserPage.jsx ((yang lama))
+//UserPage.jsx (IMPROVED - Free Real-Time Conversation)
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -29,6 +29,9 @@ export default function UserPage() {
   const [selectedVoice, setSelectedVoice] = useState(ELEVENLABS_CONFIG.voiceId);
   const [showVoiceOptions, setShowVoiceOptions] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // ✅ NEW: State untuk real-time transcript
+  const [interimTranscript, setInterimTranscript] = useState("");
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -37,8 +40,23 @@ export default function UserPage() {
   const voiceDropdownRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const audioRef = useRef(null);
-  // Tambahkan state untuk tracking feedback
-  const [feedbackStates, setFeedbackStates] = useState({}); // { chatIndex: { rating, feedbackId } }
+  
+  // ✅ NEW: Refs untuk VAD dan conversation mode
+  const silenceTimerRef = useRef(null);
+  const finalTranscriptRef = useRef("");
+  const conversationModeRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  
+  const [feedbackStates, setFeedbackStates] = useState({});
+
+  // ✅ Keep refs in sync with state
+  useEffect(() => {
+    conversationModeRef.current = conversationMode;
+  }, [conversationMode]);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
 
   useEffect(() => {
     const userData = getUser();
@@ -51,14 +69,20 @@ export default function UserPage() {
     
     // Initialize audio element
     audioRef.current = new Audio();
+    
+    // ✅ IMPROVED: Audio ended handler tanpa delay
     audioRef.current.addEventListener('ended', () => {
       console.log('Audio ended');
       setIsSpeaking(false);
       setIsAvatarSpeaking(false);
-      if (conversationMode) setTimeout(() => startListening(), 1000);
+      isSpeakingRef.current = false;
+      
+      // ✅ Langsung mulai listening tanpa delay
+      if (conversationModeRef.current) {
+        startListening();
+      }
     });
 
-    // Handle click outside
     const handleClickOutside = (event) => {
       if (voiceDropdownRef.current && !voiceDropdownRef.current.contains(event.target)) {
         setShowVoiceOptions(false);
@@ -79,6 +103,7 @@ export default function UserPage() {
     initializeSpeechRecognition();
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -90,38 +115,106 @@ export default function UserPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // ✅ COMPLETELY REWRITTEN: Speech Recognition dengan VAD
   const initializeSpeechRecognition = () => {
     if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
       console.warn("Speech recognition not supported");
       return;
     }
+    
     const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     recognitionRef.current = new SpeechRecognition();
-    recognitionRef.current.continuous = false;
-    recognitionRef.current.interimResults = false;
+    
+    // ✅ CHANGED: Enable continuous mode dan interim results
+    recognitionRef.current.continuous = true;
+    recognitionRef.current.interimResults = true;
     recognitionRef.current.lang = 'id-ID';
 
     recognitionRef.current.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setMessage(transcript);
-      setIsListening(false);
-      if (conversationMode) handleSendMessage(null, transcript);
+      // ✅ NEW: Jika AI sedang bicara dan user mulai bicara, interupsi AI
+      if (isSpeakingRef.current) {
+        console.log('User interrupted AI');
+        interruptAI();
+      }
+      
+      let interim = '';
+      let final = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript + ' ';
+        } else {
+          interim += transcript;
+        }
+      }
+      
+      // Update final transcript ref
+      if (final) {
+        finalTranscriptRef.current += final;
+      }
+      
+      // ✅ NEW: Update UI dengan real-time transcript
+      const displayText = finalTranscriptRef.current + interim;
+      setInterimTranscript(displayText);
+      setMessage(displayText);
+      
+      // ✅ NEW: Reset silence timer setiap ada input
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+      
+      // ✅ NEW: VAD - Kirim setelah 1.5 detik diam (hanya di conversation mode)
+      if (conversationModeRef.current && finalTranscriptRef.current.trim()) {
+        silenceTimerRef.current = setTimeout(() => {
+          const textToSend = finalTranscriptRef.current.trim();
+          if (textToSend) {
+            console.log('VAD triggered - sending:', textToSend);
+            finalTranscriptRef.current = '';
+            setInterimTranscript('');
+            setMessage('');
+            handleSendMessage(null, textToSend);
+          }
+        }, 1500); // 1.5 detik silence = send
+      }
     };
 
     recognitionRef.current.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
-      setIsListening(false);
-      if (event.error !== "no-speech") {
+      
+      if (event.error === 'no-speech') {
+        // ✅ Untuk no-speech, restart jika masih di conversation mode
+        if (conversationModeRef.current && !isSpeakingRef.current) {
+          console.log('No speech detected, restarting...');
+          setTimeout(() => startListening(), 500);
+        }
+      } else if (event.error !== 'aborted') {
+        setIsListening(false);
         toast.error("Voice recognition failed. Please try again.");
       }
     };
 
     recognitionRef.current.onend = () => {
+      console.log('Speech recognition ended');
       setIsListening(false);
-      if (conversationMode && !isSpeaking) {
-        setTimeout(() => startListening(), 1000);
+      
+      // ✅ IMPROVED: Auto-restart tanpa delay jika di conversation mode
+      if (conversationModeRef.current && !isSpeakingRef.current) {
+        console.log('Auto-restarting speech recognition');
+        setTimeout(() => startListening(), 100); // Minimal delay
       }
     };
+  };
+
+  // ✅ NEW: Function untuk interupsi AI
+  const interruptAI = () => {
+    console.log('Interrupting AI...');
+    stopSpeaking();
+    
+    // Clear any pending silence timer
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
   };
 
   const detectLanguage = (text) => {
@@ -130,27 +223,45 @@ export default function UserPage() {
   };
 
   const startListening = () => {
-    if (recognitionRef.current && !isListening && !isSpeaking) {
+    if (recognitionRef.current && !isSpeakingRef.current) {
       try {
+        // Reset transcript
+        finalTranscriptRef.current = '';
+        setInterimTranscript('');
+        
         recognitionRef.current.start();
         setIsListening(true);
         console.log('Started listening');
       } catch (error) {
-        console.error("Failed to start listening:", error);
-        toast.error("Failed to start voice input");
+        // Jika sudah running, abaikan error
+        if (error.name === 'InvalidStateError') {
+          console.log('Recognition already running');
+          setIsListening(true);
+        } else {
+          console.error("Failed to start listening:", error);
+        }
       }
     }
   };
 
   const stopListening = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // Ignore errors when stopping
+      }
       setIsListening(false);
       console.log('Stopped listening');
     }
+    
+    // Clear silence timer
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
   };
 
-  // ElevenLabs Text-to-Speech dengan error handling yang better
+  // ElevenLabs Text-to-Speech
   const speakWithElevenLabs = async (text) => {
     if (!audioRef.current) {
       console.error('Audio ref not available');
@@ -160,15 +271,11 @@ export default function UserPage() {
     try {
       stopSpeaking();
       
-      // Clean text
       const cleanText = text.replace(/[\[\]\(\)\*\#\>\`]/g, '').substring(0, 5000);
       
       const voiceToUse = selectedVoice || ELEVENLABS_CONFIG.voiceId;
       console.log('Generating speech with ElevenLabs');
-      console.log('Voice ID:', voiceToUse);
-      console.log('Text preview:', cleanText.substring(0, 100));
       
-      console.log('Using voice:', voiceToUse); // Debug log
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceToUse}`, {
         method: 'POST',
         headers: {
@@ -183,8 +290,6 @@ export default function UserPage() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('ElevenLabs API error:', response.status, errorText);
         throw new Error(`ElevenLabs API error: ${response.status}`);
       }
 
@@ -196,7 +301,6 @@ export default function UserPage() {
       
       const audioUrl = URL.createObjectURL(audioBlob);
       
-      // Reset audio element
       audioRef.current.src = audioUrl;
       audioRef.current.load();
       
@@ -204,30 +308,39 @@ export default function UserPage() {
         console.log('Audio started playing');
         setIsSpeaking(true);
         setIsAvatarSpeaking(true);
-        if (conversationMode) stopListening();
+        isSpeakingRef.current = true;
+        
+        // ✅ Stop listening saat AI bicara
+        if (conversationModeRef.current) {
+          stopListening();
+        }
       };
 
       audioRef.current.onerror = (e) => {
         console.error('Audio playback error:', e);
         setIsSpeaking(false);
         setIsAvatarSpeaking(false);
+        isSpeakingRef.current = false;
         toast.error('Audio playback failed');
       };
 
+      // ✅ IMPROVED: onended handler tanpa delay
       audioRef.current.onended = () => {
         console.log('Audio ended naturally');
         setIsSpeaking(false);
         setIsAvatarSpeaking(false);
-        if (conversationMode) setTimeout(() => startListening(), 1000);
+        isSpeakingRef.current = false;
+        
+        // ✅ Langsung mulai listening
+        if (conversationModeRef.current) {
+          startListening();
+        }
       };
       
-      // Play audio
       await audioRef.current.play();
-      console.log('ElevenLabs speech started successfully');
       
     } catch (error) {
       console.error("ElevenLabs TTS failed:", error);
-      // Fallback ke browser TTS
       toast.error(`ElevenLabs failed. Using browser TTS.`);
       speakWithBrowser(text);
     }
@@ -243,7 +356,6 @@ export default function UserPage() {
     window.speechSynthesis.cancel();
     const cleanText = text.replace(/[\[\]\(\)\*\#\>\`]/g, '');
     
-    // Wait for voices to load
     const speak = () => {
       const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.lang = detectLanguage(text);
@@ -255,24 +367,26 @@ export default function UserPage() {
         console.log('Browser TTS started');
         setIsSpeaking(true);
         setIsAvatarSpeaking(true);
-        if (conversationMode) stopListening();
+        isSpeakingRef.current = true;
+        if (conversationModeRef.current) stopListening();
       };
 
+      // ✅ IMPROVED: tanpa delay
       utterance.onend = () => {
         console.log('Browser TTS ended');
         setIsSpeaking(false);
         setIsAvatarSpeaking(false);
-        if (conversationMode) setTimeout(() => startListening(), 1000);
+        isSpeakingRef.current = false;
+        if (conversationModeRef.current) startListening();
       };
 
       utterance.onerror = (event) => {
         console.error('Browser TTS error:', event);
         setIsSpeaking(false);
         setIsAvatarSpeaking(false);
-        toast.error("Text-to-speech failed");
+        isSpeakingRef.current = false;
       };
 
-      // Try to find a good voice
       const voices = window.speechSynthesis.getVoices();
       const preferredVoice = voices.find(voice => 
         voice.lang.includes('en') || voice.lang.includes('id')
@@ -284,7 +398,6 @@ export default function UserPage() {
       window.speechSynthesis.speak(utterance);
     };
 
-    // If voices aren't loaded yet, wait for them
     if (window.speechSynthesis.getVoices().length === 0) {
       window.speechSynthesis.onvoiceschanged = speak;
     } else {
@@ -292,21 +405,15 @@ export default function UserPage() {
     }
   };
 
-  // Speak function - pastikan selalu dipanggil dengan kondisi yang benar
   const speak = (text) => {
     if (!text || text.trim().length === 0) {
       console.warn('No text to speak');
       return;
     }
     
-    console.log('Speak called with voiceEnabled:', voiceEnabled, 'conversationMode:', conversationMode);
-    
-    // Gunakan ElevenLabs jika kita punya API key (tanpa cek voiceEnabled)
-    // karena function ini hanya dipanggil ketika memang butuh speak
     if (ELEVENLABS_CONFIG.apiKey) {
       speakWithElevenLabs(text);
     } else {
-      // Fallback ke browser TTS
       speakWithBrowser(text);
     }
   };
@@ -322,18 +429,23 @@ export default function UserPage() {
     }
     setIsSpeaking(false);
     setIsAvatarSpeaking(false);
+    isSpeakingRef.current = false;
   };
 
   const toggleConversationMode = () => {
     const newMode = !conversationMode;
     setConversationMode(newMode);
+    conversationModeRef.current = newMode;
+    
     if (newMode) {
-      setVoiceEnabled(true); // ✅ Ini sudah benar
+      setVoiceEnabled(true);
       toast.success("Conversation mode enabled - speak naturally!");
-      setTimeout(() => startListening(), 1000);
+      setTimeout(() => startListening(), 500);
     } else {
       stopListening();
       stopSpeaking();
+      finalTranscriptRef.current = '';
+      setInterimTranscript('');
       toast.success("Conversation mode disabled");
     }
   };
@@ -368,17 +480,21 @@ export default function UserPage() {
     }
   };
 
+  // Di UserPage.jsx - perbaiki handleSendMessage
+
 const handleSendMessage = async (e, textOverride = null) => {
   if (e) e.preventDefault();
   const textToSend = textOverride || message.trim();
   if (!textToSend) return;
 
+  if (conversationModeRef.current) stopListening();
+
   setMessage("");
+  setInterimTranscript("");
   setIsUserTyping(false);
   setChats((prev) => [...prev, { type: "user", content: textToSend, timestamp: new Date() }]);
   setLoading(true);
-  setIsProcessing(true); // Set processing true saat mulai
-  setIsTyping(false); // Typing false dulu
+  setIsProcessing(true);
 
   try {
     const response = await chatAPI.sendMessage(textToSend, currentSessionId);
@@ -387,96 +503,149 @@ const handleSendMessage = async (e, textOverride = null) => {
     if (!data) throw new Error("No response data received");
     if (data.session_id && !currentSessionId) setCurrentSessionId(data.session_id);
 
-    // Setelah dapat response, set processing false dan typing true
     setIsProcessing(false);
-    setIsTyping(true);
     
-    setTimeout(() => {
-      setIsTyping(false);
-      const aiMessage = {
-        type: "ai",
-        content: data.reply || data.message || data.content || "I'm sorry, I couldn't process that request.",
-        sources: data.sources || [],
-        timestamp: new Date(data.created_at || new Date()),
-        context_used: data.context_used,
-        history_used: data.history_used,
-        chat_id: data.chat_id || data.id,
-      };
-      setChats((prev) => [...prev, aiMessage]);
-      
-      // Speak jika voice enabled ATAU conversation mode aktif
-      const shouldSpeak = voiceEnabled || conversationMode;
-      console.log('Should speak?', { voiceEnabled, conversationMode, shouldSpeak, content: aiMessage.content });
-      if (shouldSpeak) {
-        console.log('Calling speak function');
-        speak(aiMessage.content);
-      }
-      
-      loadChatHistory();
-    }, 500);
+    // ✅ LANGSUNG tanpa setTimeout 500ms
+    const aiMessage = {
+      type: "ai",
+      content: data.reply || data.message || data.content || "Maaf, saya tidak bisa memproses permintaan tersebut.",
+      sources: data.sources || [],
+      timestamp: new Date(data.created_at || new Date()),
+      context_used: data.context_used,
+      history_used: data.history_used,
+      chat_id: data.chat_id || data.id,
+    };
+    
+    setChats((prev) => [...prev, aiMessage]);
+    
+    // ✅ Hanya auto-speak di CONVERSATION MODE
+    if (conversationModeRef.current) {
+      console.log('Auto-speaking in conversation mode');
+      speak(aiMessage.content);
+    }
+    
+    loadChatHistory();
+    
   } catch (error) {
-    setIsTyping(false);
+    console.error('Send message error:', error);
     setIsProcessing(false);
+    
+    const errorMessage = {
+      type: "ai",
+      content: "Maaf, terjadi kesalahan. Server sedang sibuk, silakan coba lagi.",
+      isError: true,
+      timestamp: new Date(),
+    };
+    setChats((prev) => [...prev, errorMessage]);
+    
+    // Speak error hanya di conversation mode
+    if (conversationModeRef.current) {
+      speak("Maaf, terjadi kesalahan. Silakan coba lagi.");
+    }
+    
+    toast.error("Gagal mendapatkan response");
   } finally {
     setLoading(false);
-    if (!conversationMode) inputRef.current?.focus();
+    if (!conversationModeRef.current) inputRef.current?.focus();
   }
 };
 
-const handleFeedback = async (chatIndex, rating) => {
-  const chat = chats[chatIndex];
-  if (!chat.chat_id) {
-    toast.error("Cannot submit feedback for this message");
-    return;
-  }
+const handleSubmit = async (e) => {
+  console.log("🚀 Form submitted"); // Debug
+  e.preventDefault();
+  e.stopPropagation();
+  
+  console.log("✅ preventDefault executed"); // Debug
+  
+  setLoading(true);
 
   try {
-    const currentFeedback = feedbackStates[chatIndex];
+    console.log("📡 Calling API..."); // Debug
+    const response = await authAPI.login(formData);
+    console.log("✅ API Success:", response); // Debug
+    
+    const { user, token } = response.data.data;
+    saveAuth(user, token);
+    toast.success("Welcome back!");
 
-    // Jika user klik rating yang sama, hapus feedback (toggle off)
-    if (currentFeedback?.rating === rating) {
-      if (currentFeedback?.feedbackId) {
-        await chatAPI.deleteFeedback(currentFeedback.feedbackId);
-        setFeedbackStates((prev) => {
-          const newState = { ...prev };
-          delete newState[chatIndex];
-          return newState;
-        });
-        toast.success("Feedback removed");
+    setTimeout(() => {
+      console.log("🏃 Navigating..."); // Debug
+      if (user.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/home");
       }
+    }, 500);
+    
+  } catch (error) {
+    console.log("❌ API Error:", error); // Debug
+    console.error("Login error:", error);
+    const errorMessage = error.response?.data?.message || "Login failed";
+    
+    console.log("🔔 Showing toast..."); // Debug
+    
+    if (errorMessage.includes("Invalid email")) {
+      toast.error("Email not registered. Please check your email or sign up.");
+    } else if (errorMessage.includes("password")) {
+      toast.error("Incorrect password. Please try again.");
+    } else if (errorMessage.includes("deactivated")) {
+      toast.error("Your account has been deactivated. Please contact support.");
+    } else {
+      toast.error(errorMessage);
+    }
+    
+    console.log("✅ Toast shown"); // Debug
+  } finally {
+    setLoading(false);
+    console.log("🏁 Finally block executed"); // Debug
+  }
+};
+
+  const handleFeedback = async (chatIndex, rating) => {
+    const chat = chats[chatIndex];
+    if (!chat.chat_id) {
+      toast.error("Cannot submit feedback for this message");
       return;
     }
 
-    let response;
-    let feedbackId;
+    try {
+      const currentFeedback = feedbackStates[chatIndex];
 
-    // Submit atau update feedback
-    if (currentFeedback?.feedbackId) {
-      // Update existing feedback
-      response = await chatAPI.updateFeedback(currentFeedback.feedbackId, rating);
-      feedbackId = currentFeedback.feedbackId;
-      toast.success(rating === 1 ? "Changed to like" : "Changed to dislike");
-    } else {
-      // Create new feedback
-      response = await chatAPI.submitFeedback(chat.chat_id, rating);
-      feedbackId = response.data?.data?.feedback?.id || response.data?.feedback?.id;
-      toast.success(rating === 1 ? "Thanks for the feedback!" : "Thanks for letting us know");
+      if (currentFeedback?.rating === rating) {
+        if (currentFeedback?.feedbackId) {
+          await chatAPI.deleteFeedback(currentFeedback.feedbackId);
+          setFeedbackStates((prev) => {
+            const newState = { ...prev };
+            delete newState[chatIndex];
+            return newState;
+          });
+          toast.success("Feedback removed");
+        }
+        return;
+      }
+
+      let response;
+      let feedbackId;
+
+      if (currentFeedback?.feedbackId) {
+        response = await chatAPI.updateFeedback(currentFeedback.feedbackId, rating);
+        feedbackId = currentFeedback.feedbackId;
+        toast.success(rating === 1 ? "Changed to like" : "Changed to dislike");
+      } else {
+        response = await chatAPI.submitFeedback(chat.chat_id, rating);
+        feedbackId = response.data?.data?.feedback?.id || response.data?.feedback?.id;
+        toast.success(rating === 1 ? "Thanks for the feedback!" : "Thanks for letting us know");
+      }
+
+      setFeedbackStates((prev) => ({
+        ...prev,
+        [chatIndex]: { rating, feedbackId },
+      }));
+    } catch (error) {
+      console.error("Failed to submit feedback:", error);
+      toast.error("Failed to submit feedback");
     }
-
-    // Update state
-    setFeedbackStates((prev) => ({
-      ...prev,
-      [chatIndex]: {
-        rating,
-        feedbackId,
-      },
-    }));
-  } catch (error) {
-    console.error("Failed to submit feedback:", error);
-    toast.error("Failed to submit feedback");
-  }
-};
-
+  };
 
   const startNewChat = () => {
     stopSpeaking();
@@ -497,15 +666,14 @@ const handleFeedback = async (chatIndex, rating) => {
       if (sessionData?.messages) {
         const formattedChats = sessionData.messages.flatMap((msg) => [
           { type: "user", content: msg.message, timestamp: new Date(msg.created_at) },
-          { type: "ai", content: msg.reply, sources: msg.sources || [], timestamp: new Date(msg.created_at) 
-            , chat_id: msg.id
-          },
+          { type: "ai", content: msg.reply, sources: msg.sources || [], timestamp: new Date(msg.created_at), chat_id: msg.id },
         ]);
         setChats(formattedChats);
+        
         const newFeedbackStates = {};
         sessionData.messages.forEach((msg, idx) => {
           if (msg.feedback) {
-            const aiMessageIndex = (idx * 2) + 1; // AI message ada di index ganjil
+            const aiMessageIndex = (idx * 2) + 1;
             newFeedbackStates[aiMessageIndex] = {
               rating: msg.feedback.rating,
               feedbackId: msg.feedback.id
@@ -565,15 +733,12 @@ const handleFeedback = async (chatIndex, rating) => {
     return groups;
   };
 
-  
-
   const groupedHistory = groupHistoryByDate(chatHistory);
 
   return (
     <div style={styles.container}>
       <div style={styles.backgroundLayer}>
         <div style={styles.gradientOverlay}></div>
-        {/* Avatar background dengan deteksi typing dan speaking */}
         {chats.length > 0 && (
           <div style={styles.backgroundAvatarContainer}>
             <Avatar3D 
@@ -583,7 +748,7 @@ const handleFeedback = async (chatIndex, rating) => {
             />
           </div>
         )}      
-       </div>
+      </div>
 
       <div style={{ ...styles.sidebar, transform: isSidebarOpen ? "translateX(0)" : "translateX(-100%)" }}>
         <div style={styles.sidebarHeader}>
@@ -623,7 +788,7 @@ const handleFeedback = async (chatIndex, rating) => {
         <div style={styles.sidebarFooter}>
           <div style={styles.userInfo} ref={userDropdownRef}>
             <button onClick={() => setShowUserDropdown(!showUserDropdown)} style={styles.userButton}>
-              <div style={styles.userAvatar}>{user?.name?.charAt(0).toUpperCase()}</div>
+              <div style={styles.userAvatarSidebar}>{user?.name?.charAt(0).toUpperCase()}</div>
               <div style={styles.userDetails}>
                 <div style={styles.userName}>{user?.name}</div>
                 <div style={styles.userEmail}>{user?.email}</div>
@@ -653,12 +818,12 @@ const handleFeedback = async (chatIndex, rating) => {
               <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
-          <div style={styles.headerTitle}>
+                    <div style={styles.headerTitle}>
             <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <circle cx="14" cy="14" r="13" fill="url(#gradient)" />
+              <circle cx="14" cy="14" r="13" fill="url(#headerGradient)" />
               <path d="M10 10L14 14L18 10M10 14L14 18L18 14" stroke="white" strokeWidth="2" strokeLinecap="round" />
               <defs>
-                <linearGradient id="gradient" x1="0" y1="0" x2="28" y2="28">
+                <linearGradient id="headerGradient" x1="0" y1="0" x2="28" y2="28">
                   <stop offset="0%" stopColor="#153C30" />
                   <stop offset="100%" stopColor="#2D7A5F" />
                 </linearGradient>
@@ -666,6 +831,7 @@ const handleFeedback = async (chatIndex, rating) => {
             </svg>
             <span>TutorAI</span>
           </div>
+          
           <div style={styles.headerActions}>
             {/* Voice Selector Dropdown */}
             <div style={styles.voiceSelector} ref={voiceDropdownRef}>
@@ -702,13 +868,29 @@ const handleFeedback = async (chatIndex, rating) => {
               )}
             </div>
 
-            <button onClick={toggleConversationMode} style={{ ...styles.iconButton, background: conversationMode ? "rgba(21, 60, 48, 0.15)" : "transparent", border: conversationMode ? "2px solid #153C30" : "1px solid #E5E7EB" }} title={conversationMode ? "Conversation mode active" : "Enable conversation mode"}>
+            <button 
+              onClick={toggleConversationMode} 
+              style={{ 
+                ...styles.iconButton, 
+                background: conversationMode ? "rgba(21, 60, 48, 0.15)" : "transparent", 
+                border: conversationMode ? "2px solid #153C30" : "1px solid #E5E7EB" 
+              }} 
+              title={conversationMode ? "Conversation mode active" : "Enable conversation mode"}
+            >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <circle cx="10" cy="10" r="8" stroke={conversationMode ? "#153C30" : "#94A3B8"} strokeWidth="1.5" />
                 <path d="M7 9L10 12L14 8" stroke={conversationMode ? "#153C30" : "#94A3B8"} strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </button>
-            <button onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ ...styles.iconButton, background: voiceEnabled ? "rgba(21, 60, 48, 0.1)" : "transparent" }} title={voiceEnabled ? "Voice enabled" : "Voice disabled"}>
+            
+            <button 
+              onClick={() => setVoiceEnabled(!voiceEnabled)} 
+              style={{ 
+                ...styles.iconButton, 
+                background: voiceEnabled ? "rgba(21, 60, 48, 0.1)" : "transparent" 
+              }} 
+              title={voiceEnabled ? "Voice enabled" : "Voice disabled"}
+            >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path d="M10 2C8.34 2 7 3.34 7 5V10C7 11.66 8.34 13 10 13C11.66 13 13 11.66 13 10V5C13 3.34 11.66 2 10 2Z" stroke={voiceEnabled ? "#153C30" : "#94A3B8"} strokeWidth="1.5" />
                 <path d="M16 10C16 13.31 13.31 16 10 16C6.69 16 4 13.31 4 10M10 16V18" stroke={voiceEnabled ? "#153C30" : "#94A3B8"} strokeWidth="1.5" strokeLinecap="round" />
@@ -730,19 +912,63 @@ const handleFeedback = async (chatIndex, rating) => {
             
               <h2 style={styles.emptyTitle}>Welcome to TutorAI</h2>
               <p style={styles.emptyText}>Your intelligent learning companion. Ask me anything or try conversation mode!</p>
-              {conversationMode && <div style={styles.conversationBadge}><div style={styles.pulseIndicator}></div><span>Conversation mode active - speak now</span></div>}
-              {isUserTyping && !conversationMode && <div style={{ ...styles.conversationBadge, background: "rgba(45, 122, 95, 0.1)", border: "2px solid #2D7A5F" }}><div style={{ ...styles.pulseIndicator, background: "#2D7A5F" }}></div><span style={{ color: "#2D7A5F" }}>Listening to your input...</span></div>}
+              
+              {conversationMode && (
+                <div style={styles.conversationBadge}>
+                  <div style={styles.pulseIndicator}></div>
+                  <span>Conversation mode active - speak now</span>
+                </div>
+              )}
+              
+              {/* ✅ NEW: Show real-time transcript in empty state */}
+              {conversationMode && isListening && interimTranscript && (
+                <div style={styles.realtimeTranscript}>
+                  <span style={styles.transcriptText}>"{interimTranscript}"</span>
+                </div>
+              )}
+              
+              {isUserTyping && !conversationMode && (
+                <div style={{ 
+                  ...styles.conversationBadge, 
+                  background: "rgba(45, 122, 95, 0.1)", 
+                  border: "2px solid #2D7A5F" 
+                }}>
+                  <div style={{ ...styles.pulseIndicator, background: "#2D7A5F" }}></div>
+                  <span style={{ color: "#2D7A5F" }}>Listening to your input...</span>
+                </div>
+              )}
             </div>
           ) : (
             <div style={styles.chatMessages}>
               {chats.map((chat, index) => (
                 <div key={index} style={chat.type === "user" ? styles.userMessageWrapper : styles.aiMessageWrapper}>
-                  {chat.type === "ai" && <div style={styles.aiAvatar}><Avatar3D isSpeaking={isAvatarSpeaking && index === chats.length - 1} size={36} /></div>}
-                  <div style={styles.messageGroup}>
-                    <div style={{ ...(chat.type === "user" ? styles.userMessage : styles.aiMessage), ...(chat.isError ? styles.errorMessage : {}) }}>
-                      {chat.type === "ai" ? <MarkdownMessage content={chat.content} /> : <div style={styles.messageContent}>{chat.content}</div>}
+                  {chat.type === "ai" && (
+                    <div style={styles.aiAvatar}>
+                      <Avatar3D isSpeaking={isAvatarSpeaking && index === chats.length - 1} size={36} />
                     </div>
-                    {chat.type === "ai" && chat.history_used && <div style={styles.contextBadge}><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1V11M1 6H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.5" /></svg><span>Using conversation context</span></div>}
+                  )}
+                  <div style={styles.messageGroup}>
+                    <div style={{ 
+                      ...(chat.type === "user" ? styles.userMessage : styles.aiMessage), 
+                      ...(chat.isError ? styles.errorMessage : {}) 
+                    }}>
+                      {chat.type === "ai" ? (
+                        <MarkdownMessage content={chat.content} />
+                      ) : (
+                        <div style={styles.messageContent}>{chat.content}</div>
+                      )}
+                    </div>
+                    
+                    {chat.type === "ai" && chat.history_used && (
+                      <div style={styles.contextBadge}>
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path d="M6 1V11M1 6H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                          <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.5" />
+                        </svg>
+                        <span>Using conversation context</span>
+                      </div>
+                    )}
+                    
                     {chat.sources?.length > 0 && (
                       <div style={styles.sourcesContainer}>
                         <button onClick={() => toggleSources(index)} style={styles.sourcesToggle}>
@@ -750,7 +976,17 @@ const handleFeedback = async (chatIndex, rating) => {
                             <path d="M3 2H11C11.55 2 12 2.45 12 3V11C12 11.55 11.55 12 11 12H3C2.45 12 2 11.55 2 11V3C2 2.45 2.45 2 3 2Z" stroke="currentColor" strokeWidth="1.5" />
                           </svg>
                           <span>{chat.sources.length} Source{chat.sources.length > 1 ? "s" : ""}</span>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ marginLeft: "auto", transform: expandedSources[index] ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}>
+                          <svg 
+                            width="12" 
+                            height="12" 
+                            viewBox="0 0 12 12" 
+                            fill="none" 
+                            style={{ 
+                              marginLeft: "auto", 
+                              transform: expandedSources[index] ? "rotate(180deg)" : "rotate(0deg)", 
+                              transition: "transform 0.2s ease" 
+                            }}
+                          >
                             <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                           </svg>
                         </button>
@@ -760,8 +996,12 @@ const handleFeedback = async (chatIndex, rating) => {
                               <div key={idx} style={styles.sourceItem}>
                                 <div style={styles.sourceNumber}>[{idx + 1}]</div>
                                 <div style={styles.sourceContent}>
-                                  <div style={styles.sourceText}>"{source.text?.substring(0, 200) || source.preview || "No preview available"}..."</div>
-                                  <div style={styles.sourceMetadata}>{source.document_id} • {(source.similarity * 100).toFixed(1)}% match</div>
+                                  <div style={styles.sourceText}>
+                                    "{source.text?.substring(0, 200) || source.preview || "No preview available"}..."
+                                  </div>
+                                  <div style={styles.sourceMetadata}>
+                                    {source.document_id} • {(source.similarity * 100).toFixed(1)}% match
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -769,11 +1009,11 @@ const handleFeedback = async (chatIndex, rating) => {
                         )}
                       </div>
                     )}
+                    
                     {chat.type === "ai" && !conversationMode && !chat.isError && (
                       <div style={styles.messageActions}>
                         <button 
                           onClick={() => {
-                            console.log('Manual speak triggered');
                             if (isSpeaking) {
                               stopSpeaking();
                             } else {
@@ -809,7 +1049,6 @@ const handleFeedback = async (chatIndex, rating) => {
                           </svg>
                         </button>
                         
-                        {/* TAMBAHKAN TOMBOL DISLIKE */}
                         <button
                           onClick={() => handleFeedback(index, -1)}
                           style={{
@@ -831,16 +1070,24 @@ const handleFeedback = async (chatIndex, rating) => {
                         </button>
                       </div>
                     )}
-
-                
-                    <span style={styles.timestamp}>{new Date(chat.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                    
+                    <span style={styles.timestamp}>
+                      {new Date(chat.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
                   </div>
-                  {chat.type === "user" && <div style={styles.userAvatar}>{user?.name?.charAt(0).toUpperCase()}</div>}
+                  {chat.type === "user" && (
+                    <div style={styles.userAvatarSmall}>
+                      {user?.name?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </div>
               ))}
+              
               {isTyping && (
                 <div style={styles.aiMessageWrapper}>
-                  <div style={styles.aiAvatar}><Avatar3D isSpeaking={true} size={36} /></div>
+                  <div style={styles.aiAvatar}>
+                    <Avatar3D isSpeaking={true} size={36} />
+                  </div>
                   <div style={styles.messageGroup}>
                     <div style={styles.typingIndicator}>
                       <span style={styles.typingDot}></span>
@@ -850,6 +1097,7 @@ const handleFeedback = async (chatIndex, rating) => {
                   </div>
                 </div>
               )}
+              
               {isProcessing && (
                 <div style={styles.aiMessageWrapper}>
                   <div style={styles.aiAvatar}>
@@ -860,7 +1108,14 @@ const handleFeedback = async (chatIndex, rating) => {
                       <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                         <circle cx="10" cy="10" r="8" stroke="#153C30" strokeWidth="2" opacity="0.3"/>
                         <path d="M10 2 A 8 8 0 0 1 18 10" stroke="#153C30" strokeWidth="2" strokeLinecap="round">
-                          <animateTransform attributeName="transform" type="rotate" from="0 10 10" to="360 10 10" dur="1s" repeatCount="indefinite"/>
+                          <animateTransform 
+                            attributeName="transform" 
+                            type="rotate" 
+                            from="0 10 10" 
+                            to="360 10 10" 
+                            dur="1s" 
+                            repeatCount="indefinite"
+                          />
                         </path>
                       </svg>
                       <span>Processing...</span>
@@ -873,32 +1128,119 @@ const handleFeedback = async (chatIndex, rating) => {
           )}
         </div>
 
+        {/* Normal Input Mode */}
         {!conversationMode && (
           <div style={styles.inputContainer}>
             <div style={styles.inputWrapper}>
               <form onSubmit={handleSendMessage} style={styles.inputForm}>
-                <button type="button" onClick={isListening ? stopListening : startListening} disabled={loading} style={{ ...styles.voiceButton, background: isListening ? "#EF4444" : "transparent" }} title={isListening ? "Stop listening" : "Start voice input"}>
+                <button 
+                  type="button" 
+                  onClick={isListening ? stopListening : startListening} 
+                  disabled={loading} 
+                  style={{ 
+                    ...styles.voiceButton, 
+                    background: isListening ? "#EF4444" : "transparent" 
+                  }} 
+                  title={isListening ? "Stop listening" : "Start voice input"}
+                >
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                    <path d="M10 2C8.34 2 7 3.34 7 5V10C7 11.66 8.34 13 10 13C11.66 13 13 11.66 13 10V5C13 3.34 11.66 2 10 2Z" stroke={isListening ? "white" : "#64748B"} strokeWidth="1.5" />
-                    <path d="M16 10C16 13.31 13.31 16 10 16C6.69 16 4 13.31 4 10M10 16V18" stroke={isListening ? "white" : "#64748B"} strokeWidth="1.5" strokeLinecap="round" />
+                    <path 
+                      d="M10 2C8.34 2 7 3.34 7 5V10C7 11.66 8.34 13 10 13C11.66 13 13 11.66 13 10V5C13 3.34 11.66 2 10 2Z" 
+                      stroke={isListening ? "white" : "#64748B"} 
+                      strokeWidth="1.5" 
+                    />
+                    <path 
+                      d="M16 10C16 13.31 13.31 16 10 16C6.69 16 4 13.31 4 10M10 16V18" 
+                      stroke={isListening ? "white" : "#64748B"} 
+                      strokeWidth="1.5" 
+                      strokeLinecap="round" 
+                    />
                   </svg>
                 </button>
-                <input ref={inputRef} type="text" value={message} onChange={handleInputChange} placeholder={isListening ? "Listening..." : "Ask me anything..."} style={styles.input} disabled={loading || isListening} />
-                <button type="submit" disabled={loading || !message.trim() || isListening} style={{ ...styles.sendButton, opacity: loading || !message.trim() || isListening ? 0.5 : 1 }}>
-                  {loading ? <div style={styles.spinner}></div> : <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 10L18 2L10 18L8 12L2 10Z" fill="currentColor" stroke="currentColor" strokeWidth="1.5" /></svg>}
+                <input 
+                  ref={inputRef} 
+                  type="text" 
+                  value={message} 
+                  onChange={handleInputChange} 
+                  placeholder={isListening ? "Listening..." : "Ask me anything..."} 
+                  style={styles.input} 
+                  disabled={loading || isListening} 
+                />
+                <button 
+                  type="submit" 
+                  disabled={loading || !message.trim() || isListening} 
+                  style={{ 
+                    ...styles.sendButton, 
+                    opacity: loading || !message.trim() || isListening ? 0.5 : 1 
+                  }}
+                >
+                  {loading ? (
+                    <div style={styles.spinner}></div>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                      <path d="M2 10L18 2L10 18L8 12L2 10Z" fill="currentColor" stroke="currentColor" strokeWidth="1.5" />
+                    </svg>
+                  )}
                 </button>
               </form>
             </div>
           </div>
         )}
 
+        {/* ✅ IMPROVED: Conversation Mode Bar dengan Real-time Transcript & Interrupt */}
         {conversationMode && (
           <div style={styles.conversationModeBar}>
             <div style={styles.conversationStatus}>
-              {isListening && (<><div style={styles.listeningIndicator}></div><span>Listening...</span></>)}
-              {isSpeaking && (<><div style={styles.speakingIndicator}></div><span>Speaking...</span></>)}
-              {!isListening && !isSpeaking && <span style={styles.waitingText}>Ready to listen</span>}
+              {isListening && (
+                <>
+                  <div style={styles.listeningIndicator}></div>
+                  <div style={styles.transcriptContainer}>
+                    <span style={styles.statusLabel}>Listening...</span>
+                    {/* ✅ NEW: Real-time transcript display */}
+                    {interimTranscript && (
+                      <span style={styles.liveTranscript}>"{interimTranscript}"</span>
+                    )}
+                  </div>
+                </>
+              )}
+              {isSpeaking && (
+                <>
+                  <div style={styles.speakingIndicator}></div>
+                  <span>Speaking...</span>
+                  {/* ✅ NEW: Interrupt button */}
+                  <button 
+                    onClick={interruptAI} 
+                    style={styles.interruptButton}
+                    title="Interrupt AI"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/>
+                    </svg>
+                    Stop
+                  </button>
+                </>
+              )}
+              {isProcessing && (
+                <>
+                  <div style={styles.processingDot}></div>
+                  <span>Processing your message...</span>
+                </>
+              )}
+              {!isListening && !isSpeaking && !isProcessing && (
+                <span style={styles.waitingText}>Ready to listen - start speaking</span>
+              )}
             </div>
+            
+            {/* ✅ NEW: Exit conversation mode button */}
+            <button 
+              onClick={toggleConversationMode} 
+              style={styles.exitConversationButton}
+              title="Exit conversation mode"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </button>
           </div>
         )}
       </div>
@@ -906,153 +1248,780 @@ const handleFeedback = async (chatIndex, rating) => {
   );
 }
 
+// ✅ COMPLETE STYLES dengan tambahan untuk fitur baru
 const styles = {
-  container: { height: "100vh", display: "flex", background: "#F8FAFB", position: "relative", overflow: "hidden" },
-  backgroundLayer: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1, overflow: "hidden" },
+  container: { 
+    height: "100vh", 
+    display: "flex", 
+    background: "#F8FAFB", 
+    position: "relative", 
+    overflow: "hidden" 
+  },
+  backgroundLayer: { 
+    position: "fixed", 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    zIndex: 1, 
+    overflow: "hidden" 
+  },
   backgroundAvatarContainer: { 
-  position: "absolute", 
-  top: "50%", 
-  right: "10%", // Ubah dari left: "50%" jadi right: "10%"
-  transform: "translateY(-50%)", // Hapus translate X
-  width: "65vh", 
-  height: "65vh", 
-  maxWidth: "1920px", 
-  maxHeight: "1080px", 
-  zIndex: 4, 
-  pointerEvents: "none",
-  filter: "drop-shadow(0 0 30px rgba(171, 63, 63, 0.1))" 
-},
-  gradientOverlay: { position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(21, 60, 48, 0.02) 0%, rgba(45, 122, 95, 0.03) 100%)", zIndex: 1 },
-  sidebar: { width: "280px",margin: "0 -280px 0 0", background: "linear-gradient(180deg, #153C30 0%, #1A4D3C 100%)", display: "flex", flexDirection: "column", transition: "transform 0.3s ease", zIndex: 10, boxShadow: "2px 0 12px rgba(0, 0, 0, 0.1)" },
-  sidebarHeader: { padding: "20px", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" },
-  newChatButton: { width: "100%", padding: "12px 16px", background: "rgba(255, 255, 255, 0.1)", border: "1px solid rgba(255, 255, 255, 0.2)", borderRadius: "8px", color: "white", fontSize: "14px", fontWeight: "600", display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", transition: "all 0.2s" },
-  historyList: { flex: 1, overflowY: "auto", padding: "12px" },
-  historyGroup: { marginBottom: "20px" },
-  historyGroupLabel: { fontSize: "11px", fontWeight: "600", color: "rgba(255, 255, 255, 0.5)", textTransform: "uppercase", letterSpacing: "0.05em", padding: "8px 12px", marginBottom: "4px" },
-  historyItemWrapper: { width: "100%", display: "flex", alignItems: "center", gap: "4px", borderRadius: "6px", transition: "all 0.2s ease", marginBottom: "2px" },
-  historyItemButton: { flex: 1, padding: "10px 12px", background: "transparent", border: "none", color: "rgba(255, 255, 255, 0.9)", cursor: "pointer", textAlign: "left", fontSize: "13px", borderRadius: "6px", transition: "all 0.2s ease", display: "flex", alignItems: "center", gap: "10px", overflow: "hidden" },
-  deleteButton: { padding: "6px", background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", borderRadius: "4px", transition: "all 0.2s ease", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0, flexShrink: 0 },
-  historyItemText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  sidebarFooter: { padding: "16px", borderTop: "1px solid rgba(255, 255, 255, 0.1)" },
-  userInfo: { position: "relative" },
-  userButton: { width: "100%", display: "flex", alignItems: "center", gap: "12px", background: "transparent", border: "none", cursor: "pointer", padding: "8px", borderRadius: "8px", transition: "all 0.2s" },
-  userAvatar: { width: "40px", height: "40px", borderRadius: "50%", background: "linear-gradient(135deg, #2D7A5F 0%, #3A9B78 100%)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: "700", flexShrink: 0 },
-  userDetails: { flex: 1, overflow: "hidden", textAlign: "left" },
-  userName: { fontSize: "14px", fontWeight: "600", color: "white", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  userEmail: { fontSize: "12px", color: "rgba(255, 255, 255, 0.6)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  userDropdown: { position: "absolute", bottom: "100%", left: "8px", right: "8px", marginBottom: "8px", background: "white", borderRadius: "8px", boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)", overflow: "hidden", animation: "slideUp 0.2s ease" },
-  logoutButton: { width: "100%", padding: "12px 16px", background: "transparent", border: "none", color: "#EF4444", fontSize: "14px", fontWeight: "500", display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", transition: "all 0.2s" },
+    position: "absolute", 
+    top: "50%", 
+    right: "10%",
+    transform: "translateY(-50%)",
+    width: "65vh", 
+    height: "65vh", 
+    maxWidth: "1920px", 
+    maxHeight: "1080px", 
+    zIndex: 4, 
+    pointerEvents: "none",
+    filter: "drop-shadow(0 0 30px rgba(171, 63, 63, 0.1))" 
+  },
+  gradientOverlay: { 
+    position: "absolute", 
+    inset: 0, 
+    background: "linear-gradient(135deg, rgba(21, 60, 48, 0.02) 0%, rgba(45, 122, 95, 0.03) 100%)", 
+    zIndex: 1 
+  },
+
+  // Sidebar
+  sidebar: { 
+    width: "280px", 
+    margin: "0 -280px 0 0", 
+    background: "linear-gradient(180deg, #153C30 0%, #1A4D3C 100%)", 
+    display: "flex", 
+    flexDirection: "column", 
+    transition: "transform 0.3s ease", 
+    zIndex: 10, 
+    boxShadow: "2px 0 12px rgba(0, 0, 0, 0.1)" 
+  },
+  sidebarHeader: { 
+    padding: "20px", 
+    borderBottom: "1px solid rgba(255, 255, 255, 0.1)" 
+  },
+  newChatButton: { 
+    width: "100%", 
+    padding: "12px 16px", 
+    background: "rgba(255, 255, 255, 0.1)", 
+    border: "1px solid rgba(255, 255, 255, 0.2)", 
+    borderRadius: "8px", 
+    color: "white", 
+    fontSize: "14px", 
+    fontWeight: "600", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "10px", 
+    cursor: "pointer", 
+    transition: "all 0.2s" 
+  },
+  historyList: { 
+    flex: 1, 
+    overflowY: "auto", 
+    padding: "12px" 
+  },
+  historyGroup: { 
+    marginBottom: "20px" 
+  },
+  historyGroupLabel: { 
+    fontSize: "11px", 
+    fontWeight: "600", 
+    color: "rgba(255, 255, 255, 0.5)", 
+    textTransform: "uppercase", 
+    letterSpacing: "0.05em", 
+    padding: "8px 12px", 
+    marginBottom: "4px" 
+  },
+  historyItemWrapper: { 
+    width: "100%", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "4px", 
+    borderRadius: "6px", 
+    transition: "all 0.2s ease", 
+    marginBottom: "2px" 
+  },
+  historyItemButton: { 
+    flex: 1, 
+    padding: "10px 12px", 
+    background: "transparent", 
+    border: "none", 
+    color: "rgba(255, 255, 255, 0.9)", 
+    cursor: "pointer", 
+    textAlign: "left", 
+    fontSize: "13px", 
+    borderRadius: "6px", 
+    transition: "all 0.2s ease", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "10px", 
+    overflow: "hidden" 
+  },
+  deleteButton: { 
+    padding: "6px", 
+    background: "transparent", 
+    border: "none", 
+    color: "rgba(255,255,255,0.5)", 
+    cursor: "pointer", 
+    borderRadius: "4px", 
+    transition: "all 0.2s ease", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    opacity: 0, 
+    flexShrink: 0 
+  },
+  historyItemText: { 
+    overflow: "hidden", 
+    textOverflow: "ellipsis", 
+    whiteSpace: "nowrap" 
+  },
+  sidebarFooter: { 
+    padding: "16px", 
+    borderTop: "1px solid rgba(255, 255, 255, 0.1)" 
+  },
+
+  // User Info
+  userInfo: { 
+    position: "relative" 
+  },
+  userButton: { 
+    width: "100%", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "12px", 
+    background: "transparent", 
+    border: "none", 
+    cursor: "pointer", 
+    padding: "8px", 
+    borderRadius: "8px", 
+    transition: "all 0.2s" 
+  },
+  userAvatarSidebar: { 
+    width: "40px", 
+    height: "40px", 
+    borderRadius: "50%", 
+    background: "linear-gradient(135deg, #2D7A5F 0%, #3A9B78 100%)", 
+    color: "white", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    fontSize: "16px", 
+    fontWeight: "700", 
+    flexShrink: 0 
+  },
+  userAvatarSmall: { 
+    width: "36px", 
+    height: "36px", 
+    borderRadius: "50%", 
+    background: "linear-gradient(135deg, #2D7A5F 0%, #3A9B78 100%)", 
+    color: "white", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    fontSize: "14px", 
+    fontWeight: "700", 
+    flexShrink: 0 
+  },
+  userDetails: { 
+    flex: 1, 
+    overflow: "hidden", 
+    textAlign: "left" 
+  },
+  userName: { 
+    fontSize: "14px", 
+    fontWeight: "600", 
+    color: "white", 
+    overflow: "hidden", 
+    textOverflow: "ellipsis", 
+    whiteSpace: "nowrap" 
+  },
+  userEmail: { 
+    fontSize: "12px", 
+    color: "rgba(255, 255, 255, 0.6)", 
+    overflow: "hidden", 
+    textOverflow: "ellipsis", 
+    whiteSpace: "nowrap" 
+  },
+  userDropdown: { 
+    position: "absolute", 
+    bottom: "100%", 
+    left: "8px", 
+    right: "8px", 
+    marginBottom: "8px", 
+    background: "white", 
+    borderRadius: "8px", 
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)", 
+    overflow: "hidden", 
+    animation: "slideUp 0.2s ease" 
+  },
+  logoutButton: { 
+    width: "100%", 
+    padding: "12px 16px", 
+    background: "transparent", 
+    border: "none", 
+    color: "#EF4444", 
+    fontSize: "14px", 
+    fontWeight: "500", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "10px", 
+    cursor: "pointer", 
+    transition: "all 0.2s" 
+  },
+
+  // Main Content
   mainContent: { 
-  flex: 1, 
-  display: "flex", 
-  flexDirection: "column", 
-  position: "relative", 
-  zIndex: 1,
-  width: "100%",
-  minWidth: 0,
-  transition: "margin-left 0.3s ease"  // ← Tambah ini
+    flex: 1, 
+    display: "flex", 
+    flexDirection: "column", 
+    position: "relative", 
+    zIndex: 1,
+    width: "100%",
+    minWidth: 0,
+    transition: "margin-left 0.3s ease"
   },
-  header: { height: "64px", background: "white", borderBottom: "1px solid #E5E7EB", display: "flex", alignItems: "center", padding: "0 20px", gap: "16px", boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)" },
-  menuButton: { width: "40px", height: "40px", borderRadius: "8px", background: "transparent", border: "none", color: "#153C30", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s" },
-  headerTitle: { display: "flex", alignItems: "center", gap: "12px", fontSize: "18px", fontWeight: "700", color: "#153C30" },
-  headerActions: { marginLeft: "auto", display: "flex", gap: "8px" },
-  iconButton: { width: "40px", height: "40px", borderRadius: "8px", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s", background: "transparent" },
+
+  // Header
+  header: { 
+    height: "64px", 
+    background: "white", 
+    borderBottom: "1px solid #E5E7EB", 
+    display: "flex", 
+    alignItems: "center", 
+    padding: "0 20px", 
+    gap: "16px", 
+    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)" 
+  },
+  menuButton: { 
+    width: "40px", 
+    height: "40px", 
+    borderRadius: "8px", 
+    background: "transparent", 
+    border: "none", 
+    color: "#153C30", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    cursor: "pointer", 
+    transition: "all 0.2s" 
+  },
+  headerTitle: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "12px", 
+    fontSize: "18px", 
+    fontWeight: "700", 
+    color: "#153C30" 
+  },
+  headerActions: { 
+    marginLeft: "auto", 
+    display: "flex", 
+    gap: "8px" 
+  },
+  iconButton: { 
+    width: "40px", 
+    height: "40px", 
+    borderRadius: "8px", 
+    border: "1px solid #E5E7EB", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    cursor: "pointer", 
+    transition: "all 0.2s", 
+    background: "transparent" 
+  },
+
+  // Voice Selector
   voiceSelector: { 
-  position: 'relative', 
-  display: 'inline-block',
-  zIndex: 100  // ← TAMBAH INI
+    position: 'relative', 
+    display: 'inline-block',
+    zIndex: 100
   },
-  voiceSelectorButton: { width: "40px", height: "40px", borderRadius: "8px", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s", background: "transparent" },
+  voiceSelectorButton: { 
+    width: "40px", 
+    height: "40px", 
+    borderRadius: "8px", 
+    border: "1px solid #E5E7EB", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    cursor: "pointer", 
+    transition: "all 0.2s", 
+    background: "transparent" 
+  },
   voiceDropdown: { 
-  position: 'absolute', 
-  top: '100%', 
-  right: 0, 
-  marginTop: '8px', 
-  background: 'white', 
-  borderRadius: '8px', 
-  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)', 
-  border: '1px solid #E5E7EB', 
-  minWidth: '180px', 
-  zIndex: 9999,  // ← UBAH JADI 9999
-  animation: 'slideDown 0.2s ease' 
-},
-  voiceOption: { width: '100%', padding: '12px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '14px', color: '#153C30', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.2s', borderBottom: '1px solid #F1F5F9' },
-  chatContainer: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", zIndex: 2 },
-  emptyState: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", position: "relative", zIndex: 2 },
-  avatarContainer: { 
-  marginBottom: "24px", 
-  display: "flex", 
-  justifyContent: "center", 
-  alignItems: "center", 
-  position: "relative", 
-  zIndex: 2,
-  width: "100%",
-  height: "auto"
+    position: 'absolute', 
+    top: '100%', 
+    right: 0, 
+    marginTop: '8px', 
+    background: 'white', 
+    borderRadius: '8px', 
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)', 
+    border: '1px solid #E5E7EB', 
+    minWidth: '180px', 
+    zIndex: 9999,
+    animation: 'slideDown 0.2s ease' 
   },
-  emptyTitle: { fontSize: "28px", fontWeight: "700", color: "#153C30", marginBottom: "12px" },
-  emptyText: { fontSize: "15px", color: "#64748B", marginBottom: "24px", textAlign: "center", maxWidth: "400px" },
-  conversationBadge: { display: "flex", alignItems: "center", gap: "12px", padding: "12px 20px", background: "rgba(21, 60, 48, 0.1)", border: "2px solid #153C30", borderRadius: "12px", color: "#153C30", fontSize: "14px", fontWeight: "600", marginTop: "8px" },
-  pulseIndicator: { width: "12px", height: "12px", borderRadius: "50%", background: "#EF4444", animation: "pulse 1.5s ease-in-out infinite" },
-  chatMessages: { flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: "24px" },
-  userMessageWrapper: { display: "flex", alignItems: "flex-end", gap: "12px", justifyContent: "flex-end" },
+  voiceOption: { 
+    width: '100%', 
+    padding: '12px 16px', 
+    border: 'none', 
+    background: 'transparent', 
+    cursor: 'pointer', 
+    fontSize: '14px', 
+    color: '#153C30', 
+    display: 'flex', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    transition: 'all 0.2s', 
+    borderBottom: '1px solid #F1F5F9' 
+  },
+
+  // Chat Container
+  chatContainer: { 
+    flex: 1, 
+    overflow: "hidden", 
+    display: "flex", 
+    flexDirection: "column", 
+    zIndex: 2 
+  },
+
+  // Empty State
+  emptyState: { 
+    flex: 1, 
+    display: "flex", 
+    flexDirection: "column", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    padding: "40px 20px", 
+    position: "relative", 
+    zIndex: 2 
+  },
+  avatarContainer: { 
+    marginBottom: "24px", 
+    display: "flex", 
+    justifyContent: "center", 
+    alignItems: "center", 
+    position: "relative", 
+    zIndex: 2,
+    width: "100%",
+    height: "auto"
+  },
+  emptyTitle: { 
+    fontSize: "28px", 
+    fontWeight: "700", 
+    color: "#153C30", 
+    marginBottom: "12px" 
+  },
+  emptyText: { 
+    fontSize: "15px", 
+    color: "#64748B", 
+    marginBottom: "24px", 
+    textAlign: "center", 
+    maxWidth: "400px" 
+  },
+
+  // Conversation Badge
+  conversationBadge: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "12px", 
+    padding: "12px 20px", 
+    background: "rgba(21, 60, 48, 0.1)", 
+    border: "2px solid #153C30", 
+    borderRadius: "12px", 
+    color: "#153C30", 
+    fontSize: "14px", 
+    fontWeight: "600", 
+    marginTop: "8px" 
+  },
+  pulseIndicator: { 
+    width: "12px", 
+    height: "12px", 
+    borderRadius: "50%", 
+    background: "#EF4444", 
+    animation: "pulse 1.5s ease-in-out infinite" 
+  },
+
+  // ✅ NEW: Real-time Transcript Styles
+  realtimeTranscript: {
+    marginTop: "16px",
+    padding: "16px 24px",
+    background: "rgba(21, 60, 48, 0.05)",
+    borderRadius: "12px",
+    border: "1px dashed #153C30",
+    maxWidth: "500px",
+    textAlign: "center"
+  },
+  transcriptText: {
+    fontSize: "16px",
+    color: "#153C30",
+    fontStyle: "italic",
+    lineHeight: "1.5"
+  },
+
+  // Chat Messages
+  chatMessages: { 
+    flex: 1, 
+    overflowY: "auto", 
+    padding: "24px", 
+    display: "flex", 
+    flexDirection: "column", 
+    gap: "24px" 
+  },
+  userMessageWrapper: { 
+    display: "flex", 
+    alignItems: "flex-end", 
+    gap: "12px", 
+    justifyContent: "flex-end" 
+  },
   aiMessageWrapper: { 
-  display: "flex", 
-  alignItems: "flex-start", 
-  gap: "12px",
-  position: "relative",
-  zIndex: 1 // Tambahkan ini
-},
-  aiAvatar: { width: "36px", height: "36px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" },
-  messageGroup: { maxWidth: "70%", display: "flex", flexDirection: "column", gap: "8px" },
-  userMessage: { background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", color: "white", padding: "14px 18px", borderRadius: "18px 18px 4px 18px", boxShadow: "0 2px 12px rgba(21, 60, 48, 0.2)" },
+    display: "flex", 
+    alignItems: "flex-start", 
+    gap: "12px",
+    position: "relative",
+    zIndex: 1
+  },
+  aiAvatar: { 
+    width: "36px", 
+    height: "36px", 
+    borderRadius: "50%", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    flexShrink: 0, 
+    overflow: "hidden" 
+  },
+  messageGroup: { 
+    maxWidth: "70%", 
+    display: "flex", 
+    flexDirection: "column", 
+    gap: "8px" 
+  },
+  userMessage: { 
+    background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", 
+    color: "white", 
+    padding: "14px 18px", 
+    borderRadius: "18px 18px 4px 18px", 
+    boxShadow: "0 2px 12px rgba(21, 60, 48, 0.2)" 
+  },
   aiMessage: { 
-  background: "white", 
-  padding: "14px 18px", 
-  borderRadius: "18px 18px 18px 4px", 
-  boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)", // Shadow lebih tebal
-  border: "1px solid #E5E7EB",
-  position: "relative",
-  zIndex: 1 // Tambahkan ini
-},
-processingIndicator: { 
-  background: "white", 
-  padding: "14px 18px", 
-  borderRadius: "18px 18px 18px 4px", 
-  boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)", 
-  display: "flex", 
-  gap: "10px", 
-  alignItems: "center",
-  border: "1px solid #E5E7EB",
-  color: "#153C30",
-  fontSize: "14px",
-  fontWeight: "500"
-},
-  errorMessage: { background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "14px 18px", borderRadius: "18px 18px 18px 4px", boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)" },
-  messageContent: { fontSize: "15px", lineHeight: "1.6" },
-  contextBadge: { display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#2D7A5F", background: "rgba(45, 122, 95, 0.08)", padding: "4px 10px", borderRadius: "12px", width: "fit-content", border: "1px solid rgba(45, 122, 95, 0.2)" },
-  messageActions: { display: "flex", gap: "4px", paddingLeft: "4px" },
-  actionButton: { padding: "4px 8px", background: "transparent", border: "1px solid #E5E7EB", borderRadius: "6px", color: "#64748B", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px", transition: "all 0.2s" },
-  timestamp: { fontSize: "11px", color: "#94A3B8", paddingLeft: "4px" },
-  typingIndicator: { background: "white", padding: "14px 18px", borderRadius: "18px 18px 18px 4px", boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)", display: "flex", gap: "4px", alignItems: "center" },
-  typingDot: { width: "8px", height: "8px", borderRadius: "50%", background: "#153C30", animation: "typing 1.4s infinite" },
-  inputContainer: { background: "white", padding: "20px 24px", borderTop: "1px solid #E5E7EB", boxShadow: "0 -4px 12px rgba(0, 0, 0, 0.05)", zIndex: 11 },
-  inputWrapper: { maxWidth: "1000px", margin: "0 auto" },
-  inputForm: { display: "flex", gap: "12px", alignItems: "center" },
-  voiceButton: { width: "44px", height: "44px", borderRadius: "50%", border: "2px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.3s", flexShrink: 0 },
-  input: { flex: 1, padding: "14px 20px", border: "2px solid #E5E7EB", borderRadius: "24px", fontSize: "15px", outline: "none", color: "#1E293B", backgroundColor: "#F8FAFB", transition: "all 0.3s ease" },
-  sendButton: { width: "44px", height: "44px", borderRadius: "50%", background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", color: "white", border: "none", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.3s ease", boxShadow: "0 4px 12px rgba(21, 60, 48, 0.3)", cursor: "pointer", flexShrink: 0 },
-  spinner: { width: "20px", height: "20px", border: "2px solid rgba(255, 255, 255, 0.3)", borderTop: "2px solid white", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
-  conversationModeBar: { background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "center" },
-  conversationStatus: { display: "flex", alignItems: "center", gap: "12px", color: "white", fontSize: "16px", fontWeight: "600" },
-  listeningIndicator: { width: "16px", height: "16px", borderRadius: "50%", background: "#EF4444", animation: "pulse 1.5s ease-in-out infinite" },
-  speakingIndicator: { width: "16px", height: "16px", borderRadius: "50%", background: "#10B981", animation: "pulse 1.5s ease-in-out infinite" },
-  waitingText: { color: "rgba(255, 255, 255, 0.8)" },
-  sourcesContainer: { marginTop: "8px", background: "rgba(45, 122, 95, 0.05)", borderRadius: "8px", border: "1px solid rgba(45, 122, 95, 0.15)", overflow: "hidden" },
-  sourcesToggle: { width: "100%", padding: "10px 12px", background: "transparent", border: "none", color: "#2D7A5F", fontSize: "13px", fontWeight: "600", display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", transition: "all 0.2s" },
-  sourcesList: { padding: "8px 12px 12px 12px", display: "flex", flexDirection: "column", gap: "8px", animation: "slideDown 0.2s ease" },
-  sourceItem: { display: "flex", gap: "10px", padding: "10px", background: "white", borderRadius: "6px", border: "1px solid rgba(45, 122, 95, 0.1)" },
-  sourceNumber: { fontSize: "12px", fontWeight: "700", color: "#2D7A5F", flexShrink: 0 },
-  sourceContent: { flex: 1, display: "flex", flexDirection: "column", gap: "4px" },
-  sourceText: { fontSize: "12px", lineHeight: "1.5", color: "#475569", fontStyle: "italic" },
-  sourceMetadata: { fontSize: "11px", color: "#94A3B8", display: "flex", gap: "8px", alignItems: "center" },
+    background: "white", 
+    padding: "14px 18px", 
+    borderRadius: "18px 18px 18px 4px", 
+    boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)",
+    border: "1px solid #E5E7EB",
+    position: "relative",
+    zIndex: 1
+  },
+  errorMessage: { 
+    background: "#FEF2F2", 
+    border: "1px solid #FECACA", 
+    color: "#DC2626", 
+    padding: "14px 18px", 
+    borderRadius: "18px 18px 18px 4px", 
+    boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)" 
+  },
+  messageContent: { 
+    fontSize: "15px", 
+    lineHeight: "1.6" 
+  },
+
+  // Context Badge
+  contextBadge: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "6px", 
+    fontSize: "11px", 
+    color: "#2D7A5F", 
+    background: "rgba(45, 122, 95, 0.08)", 
+    padding: "4px 10px", 
+    borderRadius: "12px", 
+    width: "fit-content", 
+    border: "1px solid rgba(45, 122, 95, 0.2)" 
+  },
+
+  // Message Actions
+  messageActions: { 
+    display: "flex", 
+    gap: "4px", 
+    paddingLeft: "4px" 
+  },
+  actionButton: { 
+    padding: "4px 8px", 
+    background: "transparent", 
+    border: "1px solid #E5E7EB", 
+    borderRadius: "6px", 
+    color: "#64748B", 
+    cursor: "pointer", 
+    fontSize: "12px", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "4px", 
+    transition: "all 0.2s" 
+  },
+  timestamp: { 
+    fontSize: "11px", 
+    color: "#94A3B8", 
+    paddingLeft: "4px" 
+  },
+
+  // Typing & Processing Indicators
+  typingIndicator: { 
+    background: "white", 
+    padding: "14px 18px", 
+    borderRadius: "18px 18px 18px 4px", 
+    boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)", 
+    display: "flex", 
+    gap: "4px", 
+    alignItems: "center" 
+  },
+  typingDot: { 
+    width: "8px", 
+    height: "8px", 
+    borderRadius: "50%", 
+    background: "#153C30", 
+    animation: "typing 1.4s infinite" 
+  },
+  processingIndicator: { 
+    background: "white", 
+    padding: "14px 18px", 
+    borderRadius: "18px 18px 18px 4px", 
+    boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)", 
+    display: "flex", 
+    gap: "10px", 
+    alignItems: "center",
+    border: "1px solid #E5E7EB",
+    color: "#153C30",
+    fontSize: "14px",
+    fontWeight: "500"
+  },
+
+  // Input Container
+  inputContainer: { 
+    background: "white", 
+    padding: "20px 24px", 
+    borderTop: "1px solid #E5E7EB", 
+    boxShadow: "0 -4px 12px rgba(0, 0, 0, 0.05)", 
+    zIndex: 11 
+  },
+  inputWrapper: { 
+    maxWidth: "1000px", 
+    margin: "0 auto" 
+  },
+  inputForm: { 
+    display: "flex", 
+    gap: "12px", 
+    alignItems: "center" 
+  },
+  voiceButton: { 
+    width: "44px", 
+    height: "44px", 
+    borderRadius: "50%", 
+    border: "2px solid #E5E7EB", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    cursor: "pointer", 
+    transition: "all 0.3s", 
+    flexShrink: 0 
+  },
+  input: { 
+    flex: 1, 
+    padding: "14px 20px", 
+    border: "2px solid #E5E7EB", 
+    borderRadius: "24px", 
+    fontSize: "15px", 
+    outline: "none", 
+    color: "#1E293B", 
+    backgroundColor: "#F8FAFB", 
+    transition: "all 0.3s ease" 
+  },
+  sendButton: { 
+    width: "44px", 
+    height: "44px", 
+    borderRadius: "50%", 
+    background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", 
+    color: "white", 
+    border: "none", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "center", 
+    transition: "all 0.3s ease", 
+    boxShadow: "0 4px 12px rgba(21, 60, 48, 0.3)", 
+    cursor: "pointer", 
+    flexShrink: 0 
+  },
+  spinner: { 
+    width: "20px", 
+    height: "20px", 
+    border: "2px solid rgba(255, 255, 255, 0.3)", 
+    borderTop: "2px solid white", 
+    borderRadius: "50%", 
+    animation: "spin 0.8s linear infinite" 
+  },
+
+  // ✅ IMPROVED: Conversation Mode Bar
+  conversationModeBar: { 
+    background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", 
+    padding: "20px 24px", 
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "space-between",
+    zIndex: 11
+  },
+  conversationStatus: { 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "12px", 
+    color: "white", 
+    fontSize: "16px", 
+    fontWeight: "600",
+    flex: 1
+  },
+  transcriptContainer: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    flex: 1
+  },
+  statusLabel: {
+    fontSize: "14px",
+    fontWeight: "600",
+    color: "white"
+  },
+  liveTranscript: {
+    fontSize: "16px",
+    color: "rgba(255, 255, 255, 0.9)",
+    fontStyle: "italic",
+    maxWidth: "500px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap"
+  },
+  listeningIndicator: { 
+    width: "16px", 
+    height: "16px", 
+    borderRadius: "50%", 
+    background: "#EF4444", 
+    animation: "pulse 1.5s ease-in-out infinite",
+    flexShrink: 0
+  },
+  speakingIndicator: { 
+    width: "16px", 
+    height: "16px", 
+    borderRadius: "50%", 
+    background: "#10B981", 
+    animation: "pulse 1.5s ease-in-out infinite",
+    flexShrink: 0
+  },
+  processingDot: {
+    width: "16px",
+    height: "16px",
+    borderRadius: "50%",
+    background: "#F59E0B",
+    animation: "pulse 1.5s ease-in-out infinite",
+    flexShrink: 0
+  },
+  waitingText: { 
+    color: "rgba(255, 255, 255, 0.8)" 
+  },
+
+  // ✅ NEW: Interrupt Button
+  interruptButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "8px 16px",
+    background: "rgba(239, 68, 68, 0.9)",
+    border: "none",
+    borderRadius: "20px",
+    color: "white",
+    fontSize: "14px",
+    fontWeight: "600",
+    cursor: "pointer",
+    transition: "all 0.2s",
+    marginLeft: "12px"
+  },
+
+  // ✅ NEW: Exit Conversation Button
+  exitConversationButton: {
+    width: "36px",
+    height: "36px",
+    borderRadius: "50%",
+    background: "rgba(255, 255, 255, 0.2)",
+    border: "none",
+    color: "white",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    transition: "all 0.2s",
+    flexShrink: 0
+  },
+
+  // Sources
+  sourcesContainer: { 
+    marginTop: "8px", 
+    background: "rgba(45, 122, 95, 0.05)", 
+    borderRadius: "8px", 
+    border: "1px solid rgba(45, 122, 95, 0.15)", 
+    overflow: "hidden" 
+  },
+  sourcesToggle: { 
+    width: "100%", 
+    padding: "10px 12px", 
+    background: "transparent", 
+    border: "none", 
+    color: "#2D7A5F", 
+    fontSize: "13px", 
+    fontWeight: "600", 
+    display: "flex", 
+    alignItems: "center", 
+    gap: "8px", 
+    cursor: "pointer", 
+    transition: "all 0.2s" 
+  },
+  sourcesList: { 
+    padding: "8px 12px 12px 12px", 
+    display: "flex", 
+    flexDirection: "column", 
+    gap: "8px", 
+    animation: "slideDown 0.2s ease" 
+  },
+  sourceItem: { 
+    display: "flex", 
+    gap: "10px", 
+    padding: "10px", 
+    background: "white", 
+    borderRadius: "6px", 
+    border: "1px solid rgba(45, 122, 95, 0.1)" 
+  },
+  sourceNumber: { 
+    fontSize: "12px", 
+    fontWeight: "700", 
+    color: "#2D7A5F", 
+    flexShrink: 0 
+  },
+  sourceContent: { 
+    flex: 1, 
+    display: "flex", 
+    flexDirection: "column", 
+    gap: "4px" 
+  },
+  sourceText: { 
+    fontSize: "12px", 
+    lineHeight: "1.5", 
+    color: "#475569", 
+    fontStyle: "italic" 
+  },
+  sourceMetadata: { 
+    fontSize: "11px", 
+    color: "#94A3B8", 
+    display: "flex", 
+    gap: "8px", 
+    alignItems: "center" 
+  },
 };

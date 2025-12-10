@@ -81,9 +81,11 @@ router.get(
           ? "WHERE " + whereConditions.join(" AND ")
           : "";
 
-      // Get total count
+     // Get total count - HARUS INCLUDE LEFT JOIN
       const countResult = await pool.query(
-        `SELECT COUNT(*) FROM chat_history ch ${whereClause}`,
+        `SELECT COUNT(*) FROM chat_history ch
+        LEFT JOIN profiles p ON ch.user_id = p.id
+        ${whereClause}`,
         queryParams
       );
       const totalChats = parseInt(countResult.rows[0].count);

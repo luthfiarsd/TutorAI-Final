@@ -15,13 +15,13 @@ export default function Login() {
   
   // Reset Password States
   const [showResetModal, setShowResetModal] = useState(false);
-  const [resetStep, setResetStep] = useState(1); // 1: email, 2: token, 3: new password
+  const [resetStep, setResetStep] = useState(1);
   const [resetEmail, setResetEmail] = useState("");
   const [resetToken, setResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
-  const [generatedToken, setGeneratedToken] = useState(""); // For development only
+  const [generatedToken, setGeneratedToken] = useState("");
 
   const handleChange = (e) => {
     setFormData({
@@ -31,41 +31,63 @@ export default function Login() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      const response = await authAPI.login(formData);
-      const { user, token } = response.data.data;
+  try {
+    const response = await authAPI.login(formData);
+    const { user, token } = response.data.data;
 
-      saveAuth(user, token);
-      toast.success("Welcome back!");
+    saveAuth(user, token);
+    toast.success("Welcome back!");
 
+    setTimeout(() => {
       if (user.role === "admin") {
-        navigate("/admin");
+        navigate("/admin", { replace: true });
       } else {
-        navigate("/home");
+        navigate("/home", { replace: true });
       }
-    } catch (error) {
-      console.error("Login error:", error);
-      const errorMessage = error.response?.data?.message || "Login failed";
-      
-      // Specific error messages
-      if (errorMessage.includes("Invalid email")) {
-        toast.error("Email not registered. Please check your email or sign up.");
-      } else if (errorMessage.includes("password")) {
-        toast.error("Incorrect password. Please try again.");
-      } else if (errorMessage.includes("deactivated")) {
-        toast.error("Your account has been deactivated. Please contact support.");
-      } else {
-        toast.error(errorMessage);
-      }
-    } finally {
-      setLoading(false);
+    }, 500);
+    
+  } catch (error) {
+    console.error("Login error:", error);
+    const errorMessage = error.response?.data?.message || "Login failed";
+    const statusCode = error.response?.status;
+    
+    console.log("Error message:", errorMessage); // Debug
+    console.log("Status code:", statusCode); // Debug
+    
+    // Cek berdasarkan error message yang lebih fleksibel
+    const lowerMessage = errorMessage.toLowerCase();
+    
+    if (lowerMessage.includes("user not found") || 
+        lowerMessage.includes("email not found") ||
+        lowerMessage.includes("email does not exist")) {
+      toast.error("Email not registered. Please check your email or sign up.");
+    } 
+    else if (lowerMessage.includes("incorrect password") || 
+             lowerMessage.includes("wrong password") ||
+             lowerMessage.includes("invalid password") ||
+             lowerMessage.includes("password is incorrect")) {
+      toast.error("Incorrect password. Please try again.");
     }
-  };
-
-  // Step 1: Request reset code
+    else if (lowerMessage.includes("invalid credentials") || 
+             lowerMessage.includes("invalid email or password")) {
+      // Jika backend gabung error email & password jadi satu
+      toast.error("Invalid email or password. Please try again.");
+    }
+    else if (lowerMessage.includes("deactivated") || 
+             lowerMessage.includes("account disabled")) {
+      toast.error("Your account has been deactivated. Please contact support.");
+    }
+    else {
+      // Fallback: tampilkan error message dari backend
+      toast.error(errorMessage);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
   const handleRequestReset = async (e) => {
     e.preventDefault();
     
@@ -79,7 +101,6 @@ export default function Login() {
     try {
       const response = await authAPI.forgotPassword({ email: resetEmail });
       
-      // Store generated token (for development only)
       if (response.data.data.resetToken) {
         setGeneratedToken(response.data.data.resetToken);
       }
@@ -100,7 +121,6 @@ export default function Login() {
     }
   };
 
-  // Step 2: Verify token
   const handleVerifyToken = async (e) => {
     e.preventDefault();
     
@@ -134,7 +154,6 @@ export default function Login() {
     }
   };
 
-  // Step 3: Reset password
   const handleResetPassword = async (e) => {
     e.preventDefault();
     
@@ -164,7 +183,6 @@ export default function Login() {
       
       toast.success("Password reset successfully! You can now login.");
       
-      // Reset all states
       setShowResetModal(false);
       setResetStep(1);
       setResetEmail("");
@@ -206,14 +224,13 @@ export default function Login() {
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Reset Password</h3>
-              <button style={styles.closeButton} onClick={closeResetModal}>
+              <button style={styles.closeButton} onClick={closeResetModal} aria-label="Close">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                   <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
               </button>
             </div>
 
-            {/* Step 1: Enter Email */}
             {resetStep === 1 && (
               <>
                 <p style={styles.modalDescription}>
@@ -226,6 +243,7 @@ export default function Login() {
                     onChange={(e) => setResetEmail(e.target.value)}
                     placeholder="name@example.com"
                     style={styles.input}
+                    autoComplete="email"
                   />
                   <button
                     onClick={handleRequestReset}
@@ -249,14 +267,12 @@ export default function Login() {
               </>
             )}
 
-            {/* Step 2: Enter Token */}
             {resetStep === 2 && (
               <>
                 <p style={styles.modalDescription}>
                   Enter the 6-digit reset code we sent to <strong>{resetEmail}</strong>
                 </p>
                 
-                {/* Show generated token in development */}
                 {generatedToken && (
                   <div style={styles.devToken}>
                     <strong>Development Mode - Your reset code:</strong>
@@ -272,6 +288,7 @@ export default function Login() {
                     placeholder="Enter 6-digit code"
                     maxLength="6"
                     style={styles.input}
+                    autoComplete="one-time-code"
                   />
                   <button
                     onClick={handleVerifyToken}
@@ -294,6 +311,7 @@ export default function Login() {
                   <button
                     onClick={() => setResetStep(1)}
                     style={styles.backButton}
+                    type="button"
                   >
                     Back
                   </button>
@@ -301,7 +319,6 @@ export default function Login() {
               </>
             )}
 
-            {/* Step 3: New Password */}
             {resetStep === 3 && (
               <>
                 <p style={styles.modalDescription}>
@@ -314,6 +331,7 @@ export default function Login() {
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="New password (min. 6 characters)"
                     style={styles.input}
+                    autoComplete="new-password"
                   />
                   <input
                     type="password"
@@ -321,6 +339,7 @@ export default function Login() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Confirm new password"
                     style={styles.input}
+                    autoComplete="new-password"
                   />
                   <button
                     onClick={handleResetPassword}
@@ -380,14 +399,15 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} style={styles.form}>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>
-               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
+              <label style={styles.label} htmlFor="email">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
                   <rect x="2" y="4" width="12" height="9" rx="1" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M2 6L8 9L14 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
                 Email Address
               </label>
               <input
+                id="email"
                 type="email"
                 name="email"
                 value={formData.email}
@@ -401,7 +421,7 @@ export default function Login() {
 
             <div style={styles.inputGroup}>
               <div style={styles.labelRow}>
-                <label style={styles.label}>
+                <label style={styles.label} htmlFor="password">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
                     <rect x="3" y="6" width="10" height="8" rx="1" stroke="currentColor" strokeWidth="1.5"/>
                     <path d="M5 6V4C5 2.34 6.34 1 8 1C9.66 1 11 2.34 11 4V6"
@@ -419,6 +439,7 @@ export default function Login() {
               </div>
               <div style={styles.passwordWrapper}>
                 <input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={formData.password}
@@ -432,6 +453,7 @@ export default function Login() {
                   type="button"
                   style={styles.eyeButton}
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -557,14 +579,17 @@ const styles = {
     justifyContent: "center",
     zIndex: 1000,
     backdropFilter: "blur(4px)",
+    padding: "20px",
   },
   modalContent: {
     background: "white",
     borderRadius: "16px",
     padding: "32px",
     maxWidth: "440px",
-    width: "90%",
+    width: "100%",
     boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+    maxHeight: "90vh",
+    overflowY: "auto",
   },
   modalHeader: {
     display: "flex",
@@ -625,6 +650,7 @@ const styles = {
     fontSize: "15px",
     fontWeight: "600",
     cursor: "pointer",
+    transition: "all 0.2s",
   },
   leftPanel: {
     flex: "0 0 48%",
@@ -632,7 +658,7 @@ const styles = {
     padding: "60px",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     position: "relative",
     zIndex: 1,
   },
@@ -708,6 +734,8 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    flexWrap: "wrap",
+    gap: "8px",
   },
   label: {
     fontSize: "14px",
@@ -739,6 +767,7 @@ const styles = {
     transition: "all 0.2s",
     color: "#1E293B",
     background: "white",
+    boxSizing: "border-box",
   },
   passwordWrapper: {
     position: "relative",
@@ -804,6 +833,7 @@ const styles = {
     justifyContent: "center",
     alignItems: "center",
     gap: "8px",
+    flexWrap: "wrap",
   },
   footerText: {
     fontSize: "15px",
@@ -816,23 +846,9 @@ const styles = {
     fontWeight: "700",
     transition: "color 0.2s",
   },
-  bottomNote: {
-    marginTop: "48px",
-    textAlign: "center",
-  },
-  noteText: {
-    fontSize: "13px",
-    color: "#94A3B8",
-    lineHeight: "1.6",
-  },
-  noteLink: {
-    color: "#153C30",
-    textDecoration: "none",
-    fontWeight: "600",
-    transition: "color 0.2s",
-  },
 };
 
+// CSS Animations & Media Queries
 if (typeof document !== "undefined") {
   const styleSheet = document.createElement("style");
   styleSheet.textContent = `
@@ -871,35 +887,85 @@ if (typeof document !== "undefined") {
       color: #153C30 !important;
       text-decoration: underline !important;
     }
-    
-    [style*="noteLink"]:hover {
-      color: #2D7A5F !important;
-      text-decoration: underline !important;
-    }
 
     [style*="closeButton"]:hover {
       color: #153C30 !important;
     }
     
+    [style*="backButton"]:hover {
+      background: #E5E7EB !important;
+    }
+    
+    /* Tablet */
     @media (max-width: 1024px) {
       [style*="leftPanel"] {
         display: none !important;
       }
       [style*="rightPanel"] {
         flex: 1 !important;
-        padding: 40px 24px !important;
+        padding: 40px 32px !important;
+      }
+      [style*="container"] {
+        flex-direction: column !important;
       }
     }
     
-    @media (max-width: 480px) {
+    /* Mobile Large */
+    @media (max-width: 640px) {
+      [style*="rightPanel"] {
+        padding: 32px 20px !important;
+      }
       [style*="formContainer"] {
         padding: 0 !important;
       }
       [style*="title"] {
         font-size: 28px !important;
       }
+      [style*="subtitle"] {
+        font-size: 14px !important;
+      }
       [style*="modalContent"] {
-        padding: 24px !important;
+        padding: 24px 20px !important;
+        margin: 10px !important;
+      }
+      [style*="modalTitle"] {
+        font-size: 20px !important;
+      }
+      [style*="brandName"] {
+        font-size: 36px !important;
+      }
+      [style*="input"] {
+        font-size: 16px !important;
+      }
+      [style*="submitButton"] {
+        font-size: 15px !important;
+        padding: 14px !important;
+      }
+    }
+    
+    /* Mobile Small */
+    @media (max-width: 380px) {
+      [style*="rightPanel"] {
+        padding: 24px 16px !important;
+      }
+      [style*="title"] {
+        font-size: 24px !important;
+      }
+      [style*="header"] {
+        margin-bottom: 24px !important;
+      }
+      [style*="form"] {
+        gap: 16px !important;
+      }
+      [style*="modalContent"] {
+        padding: 20px 16px !important;
+      }
+      [style*="tokenDisplay"] {
+        font-size: 24px !important;
+        letter-spacing: 2px !important;
+      }
+      [style*="footerText"], [style*="footerLink"] {
+        font-size: 14px !important;
       }
     }
   `;

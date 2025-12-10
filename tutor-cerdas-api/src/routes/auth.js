@@ -3,6 +3,8 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { body, validationResult } from "express-validator";
 import pool from "../utils/db.js";
+import crypto from "crypto";
+
 
 const router = Router();
 

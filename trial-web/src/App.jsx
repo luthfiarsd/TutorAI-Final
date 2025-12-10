@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { isAuthenticated, isAdmin } from "./utils/auth";
 
+
 // Pages
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -28,7 +29,9 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
 function App() {
   return (
     <BrowserRouter>
-      <Toaster position="top-right" />
+      <Toaster position="top-right" 
+      />
+      
       <Routes>
         {/* Public routes */}
         <Route path="/login" element={<Login />} />

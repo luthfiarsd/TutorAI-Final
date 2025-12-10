@@ -27,8 +27,25 @@ export default function Register() {
     e.preventDefault();
 
     // Validasi client-side
-    if (formData.password !== formData.confirmPassword) {
-      toast.error("Passwords do not match");
+    if (!formData.name.trim()) {
+      toast.error("Please enter your name");
+      return;
+    }
+
+    if (!formData.email.trim()) {
+      toast.error("Please enter your email");
+      return;
+    }
+
+    // Validasi email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+
+    if (!formData.password) {
+      toast.error("Please enter a password");
       return;
     }
 
@@ -37,15 +54,8 @@ export default function Register() {
       return;
     }
 
-    if (!formData.name || !formData.email) {
-      toast.error("Please fill in all fields");
-      return;
-    }
-
-    // Validasi email sederhana
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      toast.error("Please enter a valid email address");
+    if (formData.password !== formData.confirmPassword) {
+      toast.error("Passwords do not match");
       return;
     }
 
@@ -53,14 +63,41 @@ export default function Register() {
 
     try {
       // Siapkan data untuk register (exclude confirmPassword)
-      const { confirmPassword, ...registerData } = formData;
+      const registerData = {
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+      };
       
       console.log("Sending register request:", registerData);
       
       const response = await authAPI.register(registerData);
       console.log("Register response:", response);
       
-      const { user, token } = response.data.data;
+      // Cek struktur response
+      if (!response.data) {
+        throw new Error("Invalid response from server");
+      }
+
+      // Handle berbagai struktur response
+      let user, token;
+      
+      if (response.data.data) {
+        // Struktur: { data: { user, token } }
+        user = response.data.data.user;
+        token = response.data.data.token;
+      } else if (response.data.user && response.data.token) {
+        // Struktur: { user, token }
+        user = response.data.user;
+        token = response.data.token;
+      } else {
+        console.error("Unexpected response structure:", response.data);
+        throw new Error("Unexpected response structure from server");
+      }
+
+      if (!user || !token) {
+        throw new Error("Missing user or token in response");
+      }
 
       // Save authentication data
       saveAuth(user, token);
@@ -74,27 +111,36 @@ export default function Register() {
       }
     } catch (error) {
       console.error("Register error details:", error);
+      console.error("Error response:", error.response);
       
       if (error.response) {
-        // Server responded with error status
-        console.error("Response status:", error.response.status);
+        const status = error.response.status;
+        const message = error.response.data?.message || error.response.data?.error;
+        
+        console.error("Response status:", status);
         console.error("Response data:", error.response.data);
         
-        if (error.response.status === 400) {
-          toast.error(error.response.data?.message || "Invalid registration data");
-        } else if (error.response.status === 409) {
-          toast.error("Email already exists. Please use a different email.");
-        } else if (error.response.status === 500) {
-          toast.error("Server error. Please try again later.");
-        } else {
-          toast.error(error.response.data?.message || "Registration failed");
+        switch (status) {
+          case 400:
+            toast.error(message || "Invalid registration data. Please check your inputs.");
+            break;
+          case 409:
+            toast.error("Email already registered. Please use a different email or login.");
+            break;
+          case 422:
+            toast.error(message || "Validation error. Please check your inputs.");
+            break;
+          case 500:
+            toast.error("Server error. Please try again later.");
+            break;
+          default:
+            toast.error(message || "Registration failed. Please try again.");
         }
       } else if (error.request) {
-        // Request was made but no response received
         console.error("No response received:", error.request);
-        toast.error("Network error. Please check your connection.");
+        toast.error("Cannot connect to server. Please check your internet connection.");
       } else {
-        // Something else happened
+        console.error("Error message:", error.message);
         toast.error(error.message || "An unexpected error occurred");
       }
     } finally {
@@ -116,7 +162,7 @@ export default function Register() {
       <div style={styles.leftPanel}>
         <div style={styles.brandSection}>
           <div style={styles.logoContainer}>
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
               <path
                 d="M12 12L20 20L28 12M12 20L20 28L28 20"
                 stroke="white"
@@ -131,33 +177,6 @@ export default function Register() {
             Advanced AI-powered Master of Agriculture learning platform
           </p>
         </div>
-
-        {/* <div style={styles.benefitsList}>
-          <div style={styles.benefitItem}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M16 6L7.5 14.5L4 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span>Personalized AI Learning Assistant</span>
-          </div>
-          <div style={styles.benefitItem}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M16 6L7.5 14.5L4 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span>Unlimited Questions & Answers</span>
-          </div>
-          <div style={styles.benefitItem}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M16 6L7.5 14.5L4 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span>Document-Based Learning Resources</span>
-          </div>
-          <div style={styles.benefitItem}>
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M16 6L7.5 14.5L4 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span>Multi-Language Support (ID & EN)</span>
-          </div>
-        </div> */}
       </div>
 
       {/* Right Panel */}
@@ -165,15 +184,15 @@ export default function Register() {
         <div style={styles.formWrapper}>
           <div style={styles.header}>
             <h2 style={styles.title}>Create your account</h2>
-            {/* <p style={styles.subtitle}>
+            <p style={styles.subtitle}>
               Start your personalized learning journey today
-            </p> */}
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} style={styles.formArea}>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
+              <label style={styles.label} htmlFor="name">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon} aria-hidden="true">
                   <circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M2 13C2 11 4 9 8 9C12 9 14 11 14 13"
                     stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -181,6 +200,7 @@ export default function Register() {
                 Full Name
               </label>
               <input
+                id="name"
                 type="text"
                 name="name"
                 value={formData.name}
@@ -193,14 +213,15 @@ export default function Register() {
             </div>
 
             <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
+              <label style={styles.label} htmlFor="email">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon} aria-hidden="true">
                   <rect x="2" y="4" width="12" height="9" rx="1" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M2 6L8 9L14 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
                 Email Address
               </label>
               <input
+                id="email"
                 type="email"
                 name="email"
                 value={formData.email}
@@ -213,8 +234,8 @@ export default function Register() {
             </div>
 
             <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
+              <label style={styles.label} htmlFor="password">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon} aria-hidden="true">
                   <rect x="3" y="6" width="10" height="8" rx="1" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M5 6V4C5 2.34 6.34 1 8 1C9.66 1 11 2.34 11 4V6"
                     stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -223,6 +244,7 @@ export default function Register() {
               </label>
               <div style={styles.passwordWrapper}>
                 <input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={formData.password}
@@ -237,15 +259,16 @@ export default function Register() {
                   type="button"
                   style={styles.eyeButton}
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5"/>
                       <path d="M2 10C2 10 5 4 10 4C15 4 18 10 18 10C18 10 15 16 10 16C5 16 2 10 2 10Z"
                         stroke="currentColor" strokeWidth="1.5"/>
                     </svg>
                   ) : (
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M3 3L17 17M10 7C11.66 7 13 8.34 13 10C13 10.34 12.94 10.66 12.84 10.97M10 13C8.34 13 7 11.66 7 10C7 9.66 7.06 9.34 7.16 9.03M2 10C2.93 8.31 4.38 6.93 6.13 6.13M18 10C17.07 11.69 15.62 13.07 13.87 13.87"
                         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
@@ -256,15 +279,16 @@ export default function Register() {
             </div>
 
             <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon}>
-                  <path d="M8 2L11 6L8 10M5 8L8 12L11 8"
-                    stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              <label style={styles.label} htmlFor="confirmPassword">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={styles.labelIcon} aria-hidden="true">
+                  <rect x="3" y="6" width="10" height="8" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M8 9V11M8 11L7 10M8 11L9 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
                 Confirm Password
               </label>
               <div style={styles.passwordWrapper}>
                 <input
+                  id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   name="confirmPassword"
                   value={formData.confirmPassword}
@@ -278,15 +302,16 @@ export default function Register() {
                   type="button"
                   style={styles.eyeButton}
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                 >
                   {showConfirmPassword ? (
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5"/>
                       <path d="M2 10C2 10 5 4 10 4C15 4 18 10 18 10C18 10 15 16 10 16C5 16 2 10 2 10Z"
                         stroke="currentColor" strokeWidth="1.5"/>
                     </svg>
                   ) : (
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                       <path d="M3 3L17 17M10 7C11.66 7 13 8.34 13 10C13 10.34 12.94 10.66 12.84 10.97M10 13C8.34 13 7 11.66 7 10C7 9.66 7.06 9.34 7.16 9.03M2 10C2.93 8.31 4.38 6.93 6.13 6.13M18 10C17.07 11.69 15.62 13.07 13.87 13.87"
                         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
@@ -312,7 +337,7 @@ export default function Register() {
               ) : (
                 <>
                   <span>Create account</span>
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                     <path d="M9 3V15M3 9H15"
                       stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                   </svg>
@@ -334,13 +359,6 @@ export default function Register() {
             </Link>
           </div>
         </div>
-
-        {/* <div style={styles.legal}>
-          By creating an account, you agree to our{" "}
-          <a href="#" style={styles.legalLink}>Terms of Service</a>
-          {" "}and{" "}
-          <a href="#" style={styles.legalLink}>Privacy Policy</a>
-        </div> */}
       </div>
     </div>
   );
@@ -404,7 +422,7 @@ const styles = {
     padding: "60px",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     position: "relative",
     zIndex: 1,
   },
@@ -436,19 +454,6 @@ const styles = {
     lineHeight: "1.7",
     maxWidth: "400px",
   },
-  benefitsList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "14px",
-  },
-  benefitItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    color: "rgba(255, 255, 255, 0.9)",
-    fontSize: "15px",
-    fontWeight: "500",
-  },
   rightPanel: {
     flex: 1,
     display: "flex",
@@ -465,13 +470,13 @@ const styles = {
     margin: "0 auto",
   },
   header: {
-    marginBottom: "36px",
+    marginBottom: "24px",
   },
   title: {
-    fontSize: "34px",
+    fontSize: "30px", // Kurangi dari 34px ke 30px
     fontWeight: "800",
     color: "#153C30",
-    marginBottom: "8px",
+    marginBottom: "6px", // Kurangi dari 8px ke 6px
     letterSpacing: "-0.03em",
   },
   subtitle: {
@@ -479,15 +484,16 @@ const styles = {
     color: "#64748B",
     lineHeight: "1.6",
   },
-  formArea: {
+   formArea: {
     display: "flex",
     flexDirection: "column",
-    gap: "20px",
+    gap: "16px", // Kurangi dari 20px ke 16px
   },
+  
   inputGroup: {
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
+    gap: "6px", // Kurangi dari 8px ke 6px
   },
   label: {
     fontSize: "14px",
@@ -500,9 +506,9 @@ const styles = {
   labelIcon: {
     opacity: 0.7,
   },
-  input: {
+   input: {
     width: "100%",
-    padding: "13px 16px",
+    padding: "12px 16px", // Kurangi dari 13px ke 12px
     fontSize: "15px",
     border: "2px solid #E5E7EB",
     borderRadius: "10px",
@@ -510,6 +516,7 @@ const styles = {
     transition: "all 0.2s",
     color: "#1E293B",
     background: "white",
+    boxSizing: "border-box",
   },
   passwordWrapper: {
     position: "relative",
@@ -529,11 +536,12 @@ const styles = {
     transition: "color 0.2s",
   },
   hint: {
-    fontSize: "13px",
+    fontSize: "12px", // Kurangi dari 13px ke 12px
     color: "#94A3B8",
+    margin: 0,
   },
   submitButton: {
-    padding: "15px",
+    padding: "13px", // Kurangi dari 15px ke 13px
     background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)",
     color: "white",
     border: "none",
@@ -546,7 +554,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     gap: "10px",
-    marginTop: "8px",
+    marginTop: "4px", // Kurangi dari 8px ke 4px
     boxShadow: "0 4px 12px rgba(21, 60, 48, 0.2)",
   },
   spinner: {
@@ -561,7 +569,7 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: "16px",
-    margin: "28px 0",
+    margin: "20px 0", // Kurangi dari 28px ke 20px
   },
   dividerLine: {
     flex: 1,
@@ -579,6 +587,7 @@ const styles = {
     justifyContent: "center",
     alignItems: "center",
     gap: "8px",
+    flexWrap: "wrap",
   },
   footerText: {
     fontSize: "15px",
@@ -591,21 +600,9 @@ const styles = {
     fontWeight: "700",
     transition: "color 0.2s",
   },
-  legal: {
-    marginTop: "40px",
-    textAlign: "center",
-    fontSize: "13px",
-    color: "#94A3B8",
-    lineHeight: "1.7",
-  },
-  legalLink: {
-    color: "#153C30",
-    textDecoration: "none",
-    fontWeight: "600",
-    transition: "color 0.2s",
-  },
 };
 
+// CSS Animations & Media Queries
 if (typeof document !== "undefined") {
   const styleSheet = document.createElement("style");
   styleSheet.textContent = `
@@ -641,27 +638,68 @@ if (typeof document !== "undefined") {
       text-decoration: underline !important;
     }
     
-    [style*="legalLink"]:hover {
-      color: #2D7A5F !important;
-      text-decoration: underline !important;
-    }
-    
+    /* Tablet */
     @media (max-width: 1024px) {
       [style*="leftPanel"] {
         display: none !important;
       }
       [style*="rightPanel"] {
         flex: 1 !important;
-        padding: 40px 24px !important;
+        padding: 40px 32px !important;
+      }
+      [style*="container"] {
+        flex-direction: column !important;
       }
     }
     
-    @media (max-width: 480px) {
+    /* Mobile Large */
+    @media (max-width: 640px) {
+      [style*="rightPanel"] {
+        padding: 32px 20px !important;
+      }
       [style*="formWrapper"] {
         padding: 0 !important;
       }
       [style*="title"] {
         font-size: 28px !important;
+      }
+      [style*="subtitle"] {
+        font-size: 14px !important;
+      }
+      [style*="input"] {
+        font-size: 16px !important;
+      }
+      [style*="submitButton"] {
+        font-size: 15px !important;
+        padding: 14px !important;
+      }
+      [style*="header"] {
+        margin-bottom: 28px !important;
+      }
+      [style*="formArea"] {
+        gap: 16px !important;
+      }
+    }
+    
+    /* Mobile Small */
+    @media (max-width: 380px) {
+      [style*="rightPanel"] {
+        padding: 24px 16px !important;
+      }
+      [style*="title"] {
+        font-size: 24px !important;
+      }
+      [style*="header"] {
+        margin-bottom: 20px !important;
+      }
+      [style*="formArea"] {
+        gap: 14px !important;
+      }
+      [style*="divider"] {
+        margin: 20px 0 !important;
+      }
+      [style*="footerText"], [style*="footerLink"] {
+        font-size: 14px !important;
       }
     }
   `;
