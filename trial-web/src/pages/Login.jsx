@@ -12,9 +12,16 @@ export default function Login() {
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [resetEmail, setResetEmail] = useState("");
+  
+  // Reset Password States
   const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStep, setResetStep] = useState(1); // 1: email, 2: token, 3: new password
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  const [generatedToken, setGeneratedToken] = useState(""); // For development only
 
   const handleChange = (e) => {
     setFormData({
@@ -32,7 +39,7 @@ export default function Login() {
       const { user, token } = response.data.data;
 
       saveAuth(user, token);
-      toast.success("Welcome back");
+      toast.success("Welcome back!");
 
       if (user.role === "admin") {
         navigate("/admin");
@@ -41,13 +48,25 @@ export default function Login() {
       }
     } catch (error) {
       console.error("Login error:", error);
-      toast.error(error.response?.data?.message || "Invalid credentials");
+      const errorMessage = error.response?.data?.message || "Login failed";
+      
+      // Specific error messages
+      if (errorMessage.includes("Invalid email")) {
+        toast.error("Email not registered. Please check your email or sign up.");
+      } else if (errorMessage.includes("password")) {
+        toast.error("Incorrect password. Please try again.");
+      } else if (errorMessage.includes("deactivated")) {
+        toast.error("Your account has been deactivated. Please contact support.");
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResetPassword = async (e) => {
+  // Step 1: Request reset code
+  const handleRequestReset = async (e) => {
     e.preventDefault();
     
     if (!resetEmail) {
@@ -58,17 +77,117 @@ export default function Login() {
     setResetLoading(true);
 
     try {
-      const response = await authAPI.resetPassword({ email: resetEmail });
+      const response = await authAPI.forgotPassword({ email: resetEmail });
       
-      toast.success("Password reset link has been sent to your email!");
-      setShowResetModal(false);
-      setResetEmail("");
+      // Store generated token (for development only)
+      if (response.data.data.resetToken) {
+        setGeneratedToken(response.data.data.resetToken);
+      }
+      
+      toast.success("Reset code has been generated! Check the code below.");
+      setResetStep(2);
     } catch (error) {
       console.error("Reset password error:", error);
-      toast.error(error.response?.data?.message || "Failed to send reset email. Please try again.");
+      const errorMessage = error.response?.data?.message;
+      
+      if (errorMessage && errorMessage.includes("not registered")) {
+        toast.error("Email not registered. Please check your email or sign up.");
+      } else {
+        toast.error(errorMessage || "Failed to send reset code. Please try again.");
+      }
     } finally {
       setResetLoading(false);
     }
+  };
+
+  // Step 2: Verify token
+  const handleVerifyToken = async (e) => {
+    e.preventDefault();
+    
+    if (!resetToken) {
+      toast.error("Please enter the reset code");
+      return;
+    }
+
+    setResetLoading(true);
+
+    try {
+      await authAPI.verifyResetToken({ email: resetEmail, token: resetToken });
+      toast.success("Code verified! Now set your new password.");
+      setResetStep(3);
+    } catch (error) {
+      console.error("Verify token error:", error);
+      const errorMessage = error.response?.data?.message;
+      
+      if (errorMessage && errorMessage.includes("expired")) {
+        toast.error("Reset code has expired. Please request a new one.");
+        setResetStep(1);
+        setResetToken("");
+        setGeneratedToken("");
+      } else if (errorMessage && errorMessage.includes("Invalid")) {
+        toast.error("Invalid reset code. Please check and try again.");
+      } else {
+        toast.error(errorMessage || "Failed to verify code.");
+      }
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  // Step 3: Reset password
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    
+    if (!newPassword || !confirmPassword) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setResetLoading(true);
+
+    try {
+      await authAPI.resetPassword({ 
+        email: resetEmail, 
+        token: resetToken, 
+        newPassword 
+      });
+      
+      toast.success("Password reset successfully! You can now login.");
+      
+      // Reset all states
+      setShowResetModal(false);
+      setResetStep(1);
+      setResetEmail("");
+      setResetToken("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setGeneratedToken("");
+    } catch (error) {
+      console.error("Reset password error:", error);
+      toast.error(error.response?.data?.message || "Failed to reset password.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const closeResetModal = () => {
+    setShowResetModal(false);
+    setResetStep(1);
+    setResetEmail("");
+    setResetToken("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setGeneratedToken("");
   };
 
   return (
@@ -83,49 +202,147 @@ export default function Login() {
 
       {/* Reset Password Modal */}
       {showResetModal && (
-        <div style={styles.modalOverlay} onClick={() => setShowResetModal(false)}>
+        <div style={styles.modalOverlay} onClick={closeResetModal}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Reset Password</h3>
-              <button
-                style={styles.closeButton}
-                onClick={() => setShowResetModal(false)}
-              >
+              <button style={styles.closeButton} onClick={closeResetModal}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                   <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                 </svg>
               </button>
             </div>
-            <p style={styles.modalDescription}>
-              Enter your email address and we'll send you a link to reset your password.
-            </p>
-            <div style={styles.modalForm}>
-              <input
-                type="email"
-                value={resetEmail}
-                onChange={(e) => setResetEmail(e.target.value)}
-                placeholder="name@example.com"
-                style={styles.input}
-              />
-              <button
-                onClick={handleResetPassword}
-                disabled={resetLoading}
-                style={{
-                  ...styles.submitButton,
-                  opacity: resetLoading ? 0.7 : 1,
-                  cursor: resetLoading ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {resetLoading ? (
-                  <>
-                    <span style={styles.spinner}></span>
-                    <span>Sending...</span>
-                  </>
-                ) : (
-                  "Send Reset Link"
+
+            {/* Step 1: Enter Email */}
+            {resetStep === 1 && (
+              <>
+                <p style={styles.modalDescription}>
+                  Enter your email address and we'll send you a reset code.
+                </p>
+                <div style={styles.modalForm}>
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    style={styles.input}
+                  />
+                  <button
+                    onClick={handleRequestReset}
+                    disabled={resetLoading}
+                    style={{
+                      ...styles.submitButton,
+                      opacity: resetLoading ? 0.7 : 1,
+                      cursor: resetLoading ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {resetLoading ? (
+                      <>
+                        <span style={styles.spinner}></span>
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      "Send Reset Code"
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 2: Enter Token */}
+            {resetStep === 2 && (
+              <>
+                <p style={styles.modalDescription}>
+                  Enter the 6-digit reset code we sent to <strong>{resetEmail}</strong>
+                </p>
+                
+                {/* Show generated token in development */}
+                {generatedToken && (
+                  <div style={styles.devToken}>
+                    <strong>Development Mode - Your reset code:</strong>
+                    <div style={styles.tokenDisplay}>{generatedToken}</div>
+                  </div>
                 )}
-              </button>
-            </div>
+                
+                <div style={styles.modalForm}>
+                  <input
+                    type="text"
+                    value={resetToken}
+                    onChange={(e) => setResetToken(e.target.value)}
+                    placeholder="Enter 6-digit code"
+                    maxLength="6"
+                    style={styles.input}
+                  />
+                  <button
+                    onClick={handleVerifyToken}
+                    disabled={resetLoading}
+                    style={{
+                      ...styles.submitButton,
+                      opacity: resetLoading ? 0.7 : 1,
+                      cursor: resetLoading ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {resetLoading ? (
+                      <>
+                        <span style={styles.spinner}></span>
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      "Verify Code"
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setResetStep(1)}
+                    style={styles.backButton}
+                  >
+                    Back
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 3: New Password */}
+            {resetStep === 3 && (
+              <>
+                <p style={styles.modalDescription}>
+                  Create your new password
+                </p>
+                <div style={styles.modalForm}>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="New password (min. 6 characters)"
+                    style={styles.input}
+                  />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    style={styles.input}
+                  />
+                  <button
+                    onClick={handleResetPassword}
+                    disabled={resetLoading}
+                    style={{
+                      ...styles.submitButton,
+                      opacity: resetLoading ? 0.7 : 1,
+                      cursor: resetLoading ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {resetLoading ? (
+                      <>
+                        <span style={styles.spinner}></span>
+                        <span>Resetting...</span>
+                      </>
+                    ) : (
+                      "Reset Password"
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -149,65 +366,6 @@ export default function Login() {
             Advanced AI-powered Master of Agriculture learning platform
           </p>
         </div>
-      
-
-
-        {/* <div style={styles.featuresList}>
-          <div style={styles.featureItem}>
-            <div style={styles.featureIcon}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2L15 8L22 9L17 14L18 21L12 18L6 21L7 14L2 9L9 8L12 2Z"
-                  stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <div>
-              <div style={styles.featureTitle}>AI-Powered Insights</div>
-              <div style={styles.featureDesc}>Get personalized learning recommendations</div>
-            </div>
-          </div>
-
-          <div style={styles.featureItem}>
-            <div style={styles.featureIcon}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"
-                  stroke="white" strokeWidth="2"/>
-                <path d="M12 6V12L16 14" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <div>
-              <div style={styles.featureTitle}>24/7 Availability</div>
-              <div style={styles.featureDesc}>Learn anytime, anywhere at your pace</div>
-            </div>
-          </div>
-
-          <div style={styles.featureItem}>
-            <div style={styles.featureIcon}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M4 19H20M4 15H20M4 11H20M4 7H12"
-                  stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <div>
-              <div style={styles.featureTitle}>Document-Based Learning</div>
-              <div style={styles.featureDesc}>Access curated educational materials</div>
-            </div>
-          </div>
-        </div> */}
-
-        {/* <div style={styles.testimonial}>
-          <div style={styles.quoteIcon}>"</div>
-          <p style={styles.quote}>
-            TutorAI transformed the way I learn. The AI responses are incredibly
-            accurate and helpful for my studies.
-          </p>
-          <div style={styles.author}>
-            <div style={styles.authorAvatar}>JD</div>
-            <div>
-              <div style={styles.authorName}>Jessica Davis</div>
-              <div style={styles.authorTitle}>Computer Science Student</div>
-            </div>
-          </div>
-        </div> */}
       </div>
 
       {/* Right Panel */}
@@ -330,15 +488,6 @@ export default function Login() {
             </Link>
           </div>
         </div>
-
-        {/* <div style={styles.bottomNote}>
-          <p style={styles.noteText}>
-            By signing in, you agree to our{" "}
-            <a href="#" style={styles.noteLink}>Terms of Service</a>
-            {" "}and{" "}
-            <a href="#" style={styles.noteLink}>Privacy Policy</a>
-          </p>
-        </div> */}
       </div>
     </div>
   );
@@ -450,15 +599,42 @@ const styles = {
     flexDirection: "column",
     gap: "16px",
   },
+  devToken: {
+    background: "rgba(251, 191, 36, 0.1)",
+    border: "1px solid rgba(251, 191, 36, 0.3)",
+    borderRadius: "12px",
+    padding: "16px",
+    marginBottom: "16px",
+    fontSize: "14px",
+    color: "#92400E",
+  },
+  tokenDisplay: {
+    fontSize: "28px",
+    fontWeight: "700",
+    letterSpacing: "4px",
+    textAlign: "center",
+    marginTop: "8px",
+    color: "#153C30",
+  },
+  backButton: {
+    padding: "12px",
+    background: "#F8FAFB",
+    color: "#153C30",
+    border: "1px solid #E5E7EB",
+    borderRadius: "10px",
+    fontSize: "15px",
+    fontWeight: "600",
+    cursor: "pointer",
+  },
   leftPanel: {
-  flex: "0 0 48%",
-  background: "linear-gradient(135deg, #153C30 0%, #1A4D3C 50%, #2D7A5F 100%)",
-  padding: "60px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-  position: "relative",
-  zIndex: 1,
+    flex: "0 0 48%",
+    background: "linear-gradient(135deg, #153C30 0%, #1A4D3C 50%, #2D7A5F 100%)",
+    padding: "60px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    position: "relative",
+    zIndex: 1,
   },
   brandSection: {
     marginBottom: "32px",
@@ -475,7 +651,6 @@ const styles = {
     backdropFilter: "blur(10px)",
     border: "1px solid rgba(255, 255, 255, 0.2)",
   },
-
   brandName: {
     fontSize: "42px",
     fontWeight: "800",
@@ -488,87 +663,6 @@ const styles = {
     color: "rgba(255, 255, 255, 0.85)",
     lineHeight: "1.7",
     maxWidth: "400px",
-  },
-  featuresList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "24px",
-    marginBottom: "40px",
-  },
-  featureItem: {
-    display: "flex",
-    gap: "16px",
-    alignItems: "flex-start",
-  },
-  featureIcon: {
-    width: "48px",
-    height: "48px",
-    background: "rgba(255, 255, 255, 0.1)",
-    borderRadius: "12px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    backdropFilter: "blur(10px)",
-  },
-  featureTitle: {
-    fontSize: "16px",
-    fontWeight: "600",
-    color: "white",
-    marginBottom: "4px",
-  },
-  featureDesc: {
-    fontSize: "14px",
-    color: "rgba(255, 255, 255, 0.7)",
-    lineHeight: "1.5",
-  },
-  testimonial: {
-    background: "rgba(255, 255, 255, 0.1)",
-    backdropFilter: "blur(10px)",
-    padding: "32px",
-    borderRadius: "16px",
-    border: "1px solid rgba(255, 255, 255, 0.2)",
-  },
-  quoteIcon: {
-    fontSize: "64px",
-    color: "rgba(255, 255, 255, 0.2)",
-    lineHeight: "1",
-    marginBottom: "16px",
-  },
-  quote: {
-    fontSize: "16px",
-    color: "rgba(255, 255, 255, 0.95)",
-    lineHeight: "1.7",
-    marginBottom: "24px",
-    fontStyle: "italic",
-  },
-  author: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-  authorAvatar: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "50%",
-    background: "rgba(255, 255, 255, 0.2)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "white",
-    fontSize: "16px",
-    fontWeight: "700",
-    border: "2px solid rgba(255, 255, 255, 0.3)",
-  },
-  authorName: {
-    fontSize: "15px",
-    fontWeight: "600",
-    color: "white",
-    marginBottom: "2px",
-  },
-  authorTitle: {
-    fontSize: "13px",
-    color: "rgba(255, 255, 255, 0.7)",
   },
   rightPanel: {
     flex: 1,

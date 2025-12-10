@@ -163,9 +163,13 @@ export default function UserPage() {
       // Clean text
       const cleanText = text.replace(/[\[\]\(\)\*\#\>\`]/g, '').substring(0, 5000);
       
-      console.log('Generating speech with ElevenLabs for text:', cleanText.substring(0, 100));
+      const voiceToUse = selectedVoice || ELEVENLABS_CONFIG.voiceId;
+      console.log('Generating speech with ElevenLabs');
+      console.log('Voice ID:', voiceToUse);
+      console.log('Text preview:', cleanText.substring(0, 100));
       
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${selectedVoice}`, {
+      console.log('Using voice:', voiceToUse); // Debug log
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceToUse}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -297,8 +301,9 @@ export default function UserPage() {
     
     console.log('Speak called with voiceEnabled:', voiceEnabled, 'conversationMode:', conversationMode);
     
-    // Gunakan ElevenLabs jika voice enabled DAN kita punya API key
-    if (voiceEnabled && ELEVENLABS_CONFIG.apiKey) {
+    // Gunakan ElevenLabs jika kita punya API key (tanpa cek voiceEnabled)
+    // karena function ini hanya dipanggil ketika memang butuh speak
+    if (ELEVENLABS_CONFIG.apiKey) {
       speakWithElevenLabs(text);
     } else {
       // Fallback ke browser TTS
@@ -323,7 +328,7 @@ export default function UserPage() {
     const newMode = !conversationMode;
     setConversationMode(newMode);
     if (newMode) {
-      setVoiceEnabled(true);
+      setVoiceEnabled(true); // ✅ Ini sudah benar
       toast.success("Conversation mode enabled - speak naturally!");
       setTimeout(() => startListening(), 1000);
     } else {
@@ -399,8 +404,10 @@ const handleSendMessage = async (e, textOverride = null) => {
       };
       setChats((prev) => [...prev, aiMessage]);
       
-      console.log('Should speak?', { voiceEnabled, conversationMode, content: aiMessage.content });
-      if (voiceEnabled || conversationMode) {
+      // Speak jika voice enabled ATAU conversation mode aktif
+      const shouldSpeak = voiceEnabled || conversationMode;
+      console.log('Should speak?', { voiceEnabled, conversationMode, shouldSpeak, content: aiMessage.content });
+      if (shouldSpeak) {
         console.log('Calling speak function');
         speak(aiMessage.content);
       }
@@ -950,9 +957,25 @@ const styles = {
   headerTitle: { display: "flex", alignItems: "center", gap: "12px", fontSize: "18px", fontWeight: "700", color: "#153C30" },
   headerActions: { marginLeft: "auto", display: "flex", gap: "8px" },
   iconButton: { width: "40px", height: "40px", borderRadius: "8px", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s", background: "transparent" },
-  voiceSelector: { position: 'relative', display: 'inline-block' },
+  voiceSelector: { 
+  position: 'relative', 
+  display: 'inline-block',
+  zIndex: 100  // ← TAMBAH INI
+  },
   voiceSelectorButton: { width: "40px", height: "40px", borderRadius: "8px", border: "1px solid #E5E7EB", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.2s", background: "transparent" },
-  voiceDropdown: { position: 'absolute', top: '100%', right: 0, marginTop: '8px', background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)', border: '1px solid #E5E7EB', minWidth: '180px', zIndex: 1, animation: 'slideDown 0.2s ease' },
+  voiceDropdown: { 
+  position: 'absolute', 
+  top: '100%', 
+  right: 0, 
+  marginTop: '8px', 
+  background: 'white', 
+  borderRadius: '8px', 
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)', 
+  border: '1px solid #E5E7EB', 
+  minWidth: '180px', 
+  zIndex: 9999,  // ← UBAH JADI 9999
+  animation: 'slideDown 0.2s ease' 
+},
   voiceOption: { width: '100%', padding: '12px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '14px', color: '#153C30', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.2s', borderBottom: '1px solid #F1F5F9' },
   chatContainer: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", zIndex: 2 },
   emptyState: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", position: "relative", zIndex: 2 },
