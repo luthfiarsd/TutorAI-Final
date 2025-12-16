@@ -31,7 +31,7 @@ export default function UserPage() {
   const [showVoiceOptions, setShowVoiceOptions] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   
-  // ✅ NEW: State untuk real-time transcript
+  //  NEW: State untuk real-time transcript
   const [interimTranscript, setInterimTranscript] = useState("");
 
   const chatEndRef = useRef(null);
@@ -42,7 +42,7 @@ export default function UserPage() {
   const typingTimeoutRef = useRef(null);
   const audioRef = useRef(null);
   
-  // ✅ NEW: Refs untuk VAD dan conversation mode
+  //  NEW: Refs untuk VAD dan conversation mode
   const silenceTimerRef = useRef(null);
   const finalTranscriptRef = useRef("");
   const conversationModeRef = useRef(false);
@@ -50,7 +50,7 @@ export default function UserPage() {
   
   const [feedbackStates, setFeedbackStates] = useState({});
 
-  // ✅ Keep refs in sync with state
+  //  Keep refs in sync with state
   useEffect(() => {
     conversationModeRef.current = conversationMode;
   }, [conversationMode]);
@@ -71,14 +71,14 @@ export default function UserPage() {
     // Initialize audio element
     audioRef.current = new Audio();
     
-    // ✅ IMPROVED: Audio ended handler tanpa delay
+    //  IMPROVED: Audio ended handler tanpa delay
     audioRef.current.addEventListener('ended', () => {
       console.log('Audio ended');
       setIsSpeaking(false);
       setIsAvatarSpeaking(false);
       isSpeakingRef.current = false;
       
-      // ✅ Langsung mulai listening tanpa delay
+      //  Langsung mulai listening tanpa delay
       if (conversationModeRef.current) {
         startListening();
       }
@@ -116,7 +116,7 @@ export default function UserPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // ✅ COMPLETELY REWRITTEN: Speech Recognition dengan VAD
+  // COMPLETELY REWRITTEN: Speech Recognition dengan VAD
   const initializeSpeechRecognition = () => {
     if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
       console.warn("Speech recognition not supported");
@@ -126,13 +126,13 @@ export default function UserPage() {
     const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     recognitionRef.current = new SpeechRecognition();
     
-    // ✅ CHANGED: Enable continuous mode dan interim results
+    // CHANGED: Enable continuous mode dan interim results
     recognitionRef.current.continuous = true;
     recognitionRef.current.interimResults = true;
     recognitionRef.current.lang = 'id-ID';
 
     recognitionRef.current.onresult = (event) => {
-      // ✅ NEW: Jika AI sedang bicara dan user mulai bicara, interupsi AI
+      // NEW: Jika AI sedang bicara dan user mulai bicara, interupsi AI
       if (isSpeakingRef.current) {
         console.log('User interrupted AI');
         interruptAI();
@@ -155,17 +155,17 @@ export default function UserPage() {
         finalTranscriptRef.current += final;
       }
       
-      // ✅ NEW: Update UI dengan real-time transcript
+      // NEW: Update UI dengan real-time transcript
       const displayText = finalTranscriptRef.current + interim;
       setInterimTranscript(displayText);
       setMessage(displayText);
       
-      // ✅ NEW: Reset silence timer setiap ada input
+      //  NEW: Reset silence timer setiap ada input
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
       }
       
-      // ✅ NEW: VAD - Kirim setelah 1.5 detik diam (hanya di conversation mode)
+      //  NEW: VAD - Kirim setelah 1.5 detik diam (hanya di conversation mode)
       if (conversationModeRef.current && finalTranscriptRef.current.trim()) {
         silenceTimerRef.current = setTimeout(() => {
           const textToSend = finalTranscriptRef.current.trim();
@@ -184,7 +184,7 @@ export default function UserPage() {
       console.error('Speech recognition error:', event.error);
       
       if (event.error === 'no-speech') {
-        // ✅ Untuk no-speech, restart jika masih di conversation mode
+        //  Untuk no-speech, restart jika masih di conversation mode
         if (conversationModeRef.current && !isSpeakingRef.current) {
           console.log('No speech detected, restarting...');
           setTimeout(() => startListening(), 500);
@@ -199,7 +199,7 @@ export default function UserPage() {
       console.log('Speech recognition ended');
       setIsListening(false);
       
-      // ✅ IMPROVED: Auto-restart tanpa delay jika di conversation mode
+      //  IMPROVED: Auto-restart tanpa delay jika di conversation mode
       if (conversationModeRef.current && !isSpeakingRef.current) {
         console.log('Auto-restarting speech recognition');
         setTimeout(() => startListening(), 100); // Minimal delay
@@ -207,7 +207,7 @@ export default function UserPage() {
     };
   };
 
-  // ✅ NEW: Function untuk interupsi AI
+  //  NEW: Function untuk interupsi AI
   const interruptAI = () => {
     console.log('Interrupting AI...');
     stopSpeaking();
@@ -311,7 +311,7 @@ export default function UserPage() {
         setIsAvatarSpeaking(true);
         isSpeakingRef.current = true;
         
-        // ✅ Stop listening saat AI bicara
+        //  Stop listening saat AI bicara
         if (conversationModeRef.current) {
           stopListening();
         }
@@ -325,14 +325,14 @@ export default function UserPage() {
         toast.error('Audio playback failed');
       };
 
-      // ✅ IMPROVED: onended handler tanpa delay
+      //  IMPROVED: onended handler tanpa delay
       audioRef.current.onended = () => {
         console.log('Audio ended naturally');
         setIsSpeaking(false);
         setIsAvatarSpeaking(false);
         isSpeakingRef.current = false;
         
-        // ✅ Langsung mulai listening
+        //  Langsung mulai listening
         if (conversationModeRef.current) {
           startListening();
         }
@@ -372,7 +372,7 @@ export default function UserPage() {
         if (conversationModeRef.current) stopListening();
       };
 
-      // ✅ IMPROVED: tanpa delay
+      //  IMPROVED: tanpa delay
       utterance.onend = () => {
         console.log('Browser TTS ended');
         setIsSpeaking(false);
@@ -481,7 +481,7 @@ export default function UserPage() {
     }
   };
 
-  // Di UserPage.jsx - perbaiki handleSendMessage
+ 
 
 const handleSendMessage = async (e, textOverride = null) => {
   if (e) e.preventDefault();
@@ -506,7 +506,7 @@ const handleSendMessage = async (e, textOverride = null) => {
 
     setIsProcessing(false);
     
-    // ✅ LANGSUNG tanpa setTimeout 500ms
+    //  LANGSUNG tanpa setTimeout 500ms
     const aiMessage = {
       type: "ai",
       content: data.reply || data.message || data.content || "Maaf, saya tidak bisa memproses permintaan tersebut.",
@@ -519,7 +519,7 @@ const handleSendMessage = async (e, textOverride = null) => {
     
     setChats((prev) => [...prev, aiMessage]);
     
-    // ✅ Hanya auto-speak di CONVERSATION MODE
+    //  Hanya auto-speak di CONVERSATION MODE
     if (conversationModeRef.current) {
       console.log('Auto-speaking in conversation mode');
       speak(aiMessage.content);
@@ -556,14 +556,14 @@ const handleSubmit = async (e) => {
   e.preventDefault();
   e.stopPropagation();
   
-  console.log("✅ preventDefault executed"); // Debug
+  console.log(" preventDefault executed"); // Debug
   
   setLoading(true);
 
   try {
     console.log("📡 Calling API..."); // Debug
     const response = await authAPI.login(formData);
-    console.log("✅ API Success:", response); // Debug
+    console.log(" API Success:", response); // Debug
     
     const { user, token } = response.data.data;
     saveAuth(user, token);
@@ -595,7 +595,7 @@ const handleSubmit = async (e) => {
       toast.error(errorMessage);
     }
     
-    console.log("✅ Toast shown"); // Debug
+    console.log(" Toast shown"); // Debug
   } finally {
     setLoading(false);
     console.log("🏁 Finally block executed"); // Debug
@@ -743,12 +743,12 @@ const handleSubmit = async (e) => {
         {chats.length > 0 && (
           <div style={styles.backgroundAvatarContainer}>
             <Avatar3D 
-              isSpeaking={isAvatarSpeaking} 
-              isUserTyping={isProcessing} 
-              size={2000} 
+              isSpeaking={isAvatarSpeaking}      // ✅ Ikuti AI speaking
+              isUserTyping={isUserTyping}        // ✅ Ikuti user typing
+              size={600} 
             />
           </div>
-        )}      
+        )}  
       </div>
 
       <div style={{ ...styles.sidebar, transform: isSidebarOpen ? "translateX(0)" : "translateX(-100%)" }}>
@@ -921,7 +921,7 @@ const handleSubmit = async (e) => {
                 </div>
               )}
               
-              {/* ✅ NEW: Show real-time transcript in empty state */}
+              {/*  NEW: Show real-time transcript in empty state */}
               {conversationMode && isListening && interimTranscript && (
                 <div style={styles.realtimeTranscript}>
                   <span style={styles.transcriptText}>"{interimTranscript}"</span>
@@ -944,10 +944,44 @@ const handleSubmit = async (e) => {
               {chats.map((chat, index) => (
                 <div key={index} style={chat.type === "user" ? styles.userMessageWrapper : styles.aiMessageWrapper}>
                   {chat.type === "ai" && (
-                    <div style={styles.aiAvatar}>
-                      <Avatar3D isSpeaking={isAvatarSpeaking && index === chats.length - 1} size={36} />
+                    <div style={styles.aiAvatarIcon}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        
+                          <rect x="7" y="6" width="10" height="9" rx="2" fill="white"/>
+                          
+                       
+                          <line x1="12" y1="6" x2="12" y2="3" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                          <circle cx="12" cy="2.5" r="1" fill="white"/>
+                          
+                         
+                          <circle cx="9.5" cy="9.5" r="1.2" fill="#153C30"/>
+                          <circle cx="14.5" cy="9.5" r="1.2" fill="#153C30"/>
+                          
+                          
+                          <circle cx="10" cy="9" r="0.4" fill="white" opacity="0.8"/>
+                          <circle cx="15" cy="9" r="0.4" fill="white" opacity="0.8"/>
+                          
+                          
+                          <path d="M9 12.5C9 12.5 10 14 12 14C14 14 15 12.5 15 12.5" 
+                                stroke="#153C30" 
+                                strokeWidth="1.5" 
+                                strokeLinecap="round"/>
+                                
+                          <rect x="8" y="15" width="8" height="5" rx="1.5" fill="white" opacity="0.9"/>
+                                     
+                          <rect x="5" y="16" width="2" height="3" rx="1" fill="white" opacity="0.8"/>
+                          <rect x="17" y="16" width="2" height="3" rx="1" fill="white" opacity="0.8"/>
+                          
+                          <circle cx="10" cy="17.5" r="0.5" fill="#153C30" opacity="0.6"/>
+                          <circle cx="14" cy="17.5" r="0.5" fill="#153C30" opacity="0.6"/>
+                          
+                
+                          <rect x="9" y="20" width="2" height="2" rx="0.5" fill="white" opacity="0.8"/>
+                          <rect x="13" y="20" width="2" height="2" rx="0.5" fill="white" opacity="0.8"/>
+                        </svg>
                     </div>
                   )}
+
                   <div style={styles.messageGroup}>
                     <div style={{ 
                       ...(chat.type === "user" ? styles.userMessage : styles.aiMessage), 
@@ -1086,7 +1120,7 @@ const handleSubmit = async (e) => {
               
               {isTyping && (
                 <div style={styles.aiMessageWrapper}>
-                  <div style={styles.aiAvatar}>
+                  <div style={styles.aiAvatarIcon}>
                     <Avatar3D isSpeaking={true} size={36} />
                   </div>
                   <div style={styles.messageGroup}>
@@ -1100,30 +1134,47 @@ const handleSubmit = async (e) => {
               )}
               
               {isProcessing && (
-                <div style={styles.aiMessageWrapper}>
-                  <div style={styles.aiAvatar}>
-                    <Avatar3D isSpeaking={false} isProcessing={true} size={36} />
-                  </div>
-                  <div style={styles.messageGroup}>
-                    <div style={styles.processingIndicator}>
-                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                        <circle cx="10" cy="10" r="8" stroke="#153C30" strokeWidth="2" opacity="0.3"/>
-                        <path d="M10 2 A 8 8 0 0 1 18 10" stroke="#153C30" strokeWidth="2" strokeLinecap="round">
-                          <animateTransform 
-                            attributeName="transform" 
-                            type="rotate" 
-                            from="0 10 10" 
-                            to="360 10 10" 
-                            dur="1s" 
-                            repeatCount="indefinite"
-                          />
-                        </path>
-                      </svg>
-                      <span>Processing...</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+  <div style={styles.aiMessageWrapper}>
+    <div style={styles.aiAvatarIcon}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <rect x="7" y="6" width="10" height="9" rx="2" fill="white"/>
+        <line x1="12" y1="6" x2="12" y2="3" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+        <circle cx="12" cy="2.5" r="1" fill="white"/>
+        <circle cx="9.5" cy="9.5" r="1.2" fill="#153C30"/>
+        <circle cx="14.5" cy="9.5" r="1.2" fill="#153C30"/>
+        <circle cx="10" cy="9" r="0.4" fill="white" opacity="0.8"/>
+        <circle cx="15" cy="9" r="0.4" fill="white" opacity="0.8"/>
+        <path d="M9 12.5C9 12.5 10 14 12 14C14 14 15 12.5 15 12.5" 
+              stroke="#153C30" strokeWidth="1.5" strokeLinecap="round"/>
+        <rect x="8" y="15" width="8" height="5" rx="1.5" fill="white" opacity="0.9"/>
+        <rect x="5" y="16" width="2" height="3" rx="1" fill="white" opacity="0.8"/>
+        <rect x="17" y="16" width="2" height="3" rx="1" fill="white" opacity="0.8"/>
+        <circle cx="10" cy="17.5" r="0.5" fill="#153C30" opacity="0.6"/>
+        <circle cx="14" cy="17.5" r="0.5" fill="#153C30" opacity="0.6"/>
+        <rect x="9" y="20" width="2" height="2" rx="0.5" fill="white" opacity="0.8"/>
+        <rect x="13" y="20" width="2" height="2" rx="0.5" fill="white" opacity="0.8"/>
+      </svg>
+    </div>
+    <div style={styles.messageGroup}>
+      <div style={styles.processingIndicator}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="8" stroke="#153C30" strokeWidth="2" opacity="0.3"/>
+          <path d="M10 2 A 8 8 0 0 1 18 10" stroke="#153C30" strokeWidth="2" strokeLinecap="round">
+            <animateTransform 
+              attributeName="transform" 
+              type="rotate" 
+              from="0 10 10" 
+              to="360 10 10" 
+              dur="1s" 
+              repeatCount="indefinite"
+            />
+          </path>
+        </svg>
+        <span>Processing...</span>
+      </div>
+    </div>
+  </div>
+)}
               <div ref={chatEndRef} />
             </div>
           )}
@@ -1188,7 +1239,7 @@ const handleSubmit = async (e) => {
           </div>
         )}
 
-        {/* ✅ IMPROVED: Conversation Mode Bar dengan Real-time Transcript & Interrupt */}
+        {/*  IMPROVED: Conversation Mode Bar dengan Real-time Transcript & Interrupt */}
         {conversationMode && (
           <div style={styles.conversationModeBar}>
             <div style={styles.conversationStatus}>
@@ -1197,7 +1248,7 @@ const handleSubmit = async (e) => {
                   <div style={styles.listeningIndicator}></div>
                   <div style={styles.transcriptContainer}>
                     <span style={styles.statusLabel}>Listening...</span>
-                    {/* ✅ NEW: Real-time transcript display */}
+                    {/*  NEW: Real-time transcript display */}
                     {interimTranscript && (
                       <span style={styles.liveTranscript}>"{interimTranscript}"</span>
                     )}
@@ -1208,7 +1259,7 @@ const handleSubmit = async (e) => {
                 <>
                   <div style={styles.speakingIndicator}></div>
                   <span>Speaking...</span>
-                  {/* ✅ NEW: Interrupt button */}
+                  {/*  NEW: Interrupt button */}
                   <button 
                     onClick={interruptAI} 
                     style={styles.interruptButton}
@@ -1232,7 +1283,7 @@ const handleSubmit = async (e) => {
               )}
             </div>
             
-            {/* ✅ NEW: Exit conversation mode button */}
+            {/*  NEW: Exit conversation mode button */}
             <button 
               onClick={toggleConversationMode} 
               style={styles.exitConversationButton}
@@ -1249,8 +1300,23 @@ const handleSubmit = async (e) => {
   );
 }
 
-// ✅ COMPLETE STYLES dengan tambahan untuk fitur baru
+// COMPLETE STYLES dengan tambahan untuk fitur baru
 const styles = {
+  aiAvatarIcon: { 
+  width: "36px",           // ✅ Fixed size, tidak mengecil
+  height: "36px", 
+  minWidth: "36px",        // ✅ Prevent shrinking
+  minHeight: "36px",
+  borderRadius: "50%", 
+  background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", 
+  display: "flex", 
+  alignItems: "center", 
+  justifyContent: "center", 
+  flexShrink: 0,
+  boxShadow: "0 2px 8px rgba(21, 60, 48, 0.25)",
+  transition: "transform 0.2s ease"
+},
+
   container: { 
     height: "100vh", 
     display: "flex", 
@@ -1268,24 +1334,25 @@ const styles = {
     overflow: "hidden" 
   },
   backgroundAvatarContainer: { 
-    position: "absolute", 
-    top: "50%", 
-    right: "10%",
-    transform: "translateY(-50%)",
-    width: "65vh", 
-    height: "65vh", 
-    maxWidth: "1920px", 
-    maxHeight: "1080px", 
-    zIndex: 4, 
-    pointerEvents: "none",
-    filter: "drop-shadow(0 0 30px rgba(171, 63, 63, 0.1))" 
-  },
+  position: "absolute", 
+  top: "50%", 
+  right: "-5%",              // ✅ Ubah dari "5%" ke "2%" (lebih ke kanan)
+  transform: "translateY(-50%)",
+  width: "600px",
+  height: "600px", 
+  zIndex: 3,
+  pointerEvents: "none",
+  opacity: 0.85,
+  filter: "drop-shadow(0 0 40px rgba(21, 60, 48, 0.15))" 
+},
   gradientOverlay: { 
     position: "absolute", 
     inset: 0, 
     background: "linear-gradient(135deg, rgba(21, 60, 48, 0.02) 0%, rgba(45, 122, 95, 0.03) 100%)", 
     zIndex: 1 
   },
+
+
 
   // Sidebar
   sidebar: { 
@@ -1487,15 +1554,15 @@ const styles = {
   // Header
   header: { 
   height: "64px",
-  minHeight: "64px",        // ✅ Prevent height collapse
+  minHeight: "64px",        //  Prevent height collapse
   background: "white", 
   borderBottom: "1px solid #E5E7EB", 
   display: "flex", 
   alignItems: "center", 
   padding: "0 20px", 
-  gap: "12px",              // ✅ Reduce gap sedikit
+  gap: "12px",              //  Reduce gap sedikit
   boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
-  flexShrink: 0             // ✅ Prevent shrinking
+  flexShrink: 0             //  Prevent shrinking
 },
   menuButton: { 
     width: "50px", 
@@ -1525,8 +1592,8 @@ const styles = {
   marginLeft: "auto", 
   display: "flex", 
   gap: "8px",
-  flexShrink: 0,            // ✅ Prevent shrinking
-  alignItems: "center"      // ✅ Keep aligned
+  flexShrink: 0,            //  Prevent shrinking
+  alignItems: "center"      //  Keep aligned
 },
   iconButton: { 
   width: "50px",          
@@ -1659,7 +1726,7 @@ const styles = {
     animation: "pulse 1.5s ease-in-out infinite" 
   },
 
-  // ✅ NEW: Real-time Transcript Styles
+  //  NEW: Real-time Transcript Styles
   realtimeTranscript: {
     marginTop: "16px",
     padding: "16px 24px",
@@ -1698,16 +1765,7 @@ const styles = {
     position: "relative",
     zIndex: 1
   },
-  aiAvatar: { 
-    width: "36px", 
-    height: "36px", 
-    borderRadius: "50%", 
-    display: "flex", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    flexShrink: 0, 
-    overflow: "hidden" 
-  },
+ 
   messageGroup: { 
     maxWidth: "70%", 
     display: "flex", 
@@ -1877,7 +1935,7 @@ const styles = {
     animation: "spin 0.8s linear infinite" 
   },
 
-  // ✅ IMPROVED: Conversation Mode Bar
+  //  IMPROVED: Conversation Mode Bar
   conversationModeBar: { 
     background: "linear-gradient(135deg, #153C30 0%, #2D7A5F 100%)", 
     padding: "20px 24px", 
@@ -1943,7 +2001,7 @@ const styles = {
     color: "rgba(255, 255, 255, 0.8)" 
   },
 
-  // ✅ NEW: Interrupt Button
+  //  NEW: Interrupt Button
   interruptButton: {
     display: "flex",
     alignItems: "center",
@@ -1960,7 +2018,7 @@ const styles = {
     marginLeft: "12px"
   },
 
-  // ✅ NEW: Exit Conversation Button
+  //  NEW: Exit Conversation Button
   exitConversationButton: {
     width: "36px",
     height: "36px",

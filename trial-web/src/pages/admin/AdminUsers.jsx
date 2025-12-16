@@ -84,7 +84,7 @@ export default function AdminUsers() {
       
       // Prepare data sesuai dengan struktur database
       const updateData = {
-        name: editingUser.name, // Gunakan 'name' bukan 'full_name'
+        name: editingUser.name, 
         email: editingUser.email,
         role: editingUser.role,
         is_active: editingUser.is_active,
